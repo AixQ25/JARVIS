@@ -1,0 +1,26 @@
+{
+  "name": "jarvis-desktop-pet",
+  "version": "1.0.0",
+  "description": "AI状态可视化桌面宠物 - 粒子特效",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": [
+    "electron",
+    "three.js",
+    "particle",
+    "desktop-pet",
+    "ai"
+  ],
+  "author": "AixQ",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.3.3"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "three": "^0.160.0"
+  }
+}
