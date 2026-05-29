@@ -160,9 +160,40 @@ class JarvisCore {
     this.flowSpeeds = null;
 
     this.flickerSprites = [];
+    this.flickerPool = [];
+    this.frameCount = 0;
 
     this.time = 0;
     this.init();
+  }
+
+  init() {
+    this.createMechanicalCore();
+    this.createHUDStructure();
+    this.createRadialCircuits();
+    this.createScanStructures();
+    this.createDataArcs();
+    this.createFlowField();
+    this.initFlickerPool();
+  }
+
+  // 初始化闪烁对象池
+  initFlickerPool() {
+    const poolSize = 25;
+    for (let i = 0; i < poolSize; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: this.overTex,
+        color: 0xFFFFFF,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.visible = false;
+      this.group.add(sprite);
+      this.flickerPool.push({ sprite, mat, active: false, age: 0, maxAge: 0 });
+    }
   }
 
   init() {
@@ -410,7 +441,7 @@ class JarvisCore {
 
   // ========== 3. 放射状电路网络 ==========
   createRadialCircuits() {
-    const nodeCount = 40;
+    const nodeCount = 20; // 从40降到20
     const nodes = [];
     const shells = [0.2, 0.4, 0.65, 0.9];
 
@@ -587,17 +618,13 @@ class JarvisCore {
   createDataArcs() {
     const arcDefs = [
       { r: 0.72, tiltX: 0.3, tiltZ: 0, gapPattern: [0.0, 0.7, 0.85, 0.95] },
-      { r: 0.78, tiltX: 0.9, tiltZ: 0.5, gapPattern: [0.05, 0.35, 0.55, 0.85] },
       { r: 0.84, tiltX: -0.6, tiltZ: -0.3, gapPattern: [0.1, 0.4, 0.7, 0.9] },
-      { r: 0.90, tiltX: 0.5, tiltZ: 0.7, gapPattern: [0.0, 0.3, 0.55, 0.8] },
       { r: 0.96, tiltX: -0.8, tiltZ: 0.2, gapPattern: [0.15, 0.45, 0.65, 0.95] },
-      { r: 1.02, tiltX: 0.1, tiltZ: -0.6, gapPattern: [0.0, 0.5, 0.75, 0.9] },
       { r: 1.10, tiltX: 0.7, tiltZ: -0.4, gapPattern: [0.08, 0.38, 0.6, 0.85] },
-      { r: 1.18, tiltX: -0.4, tiltZ: 0.6, gapPattern: [0.0, 0.4, 0.7, 0.92] },
-      { r: 0.76, tiltX: -0.2, tiltZ: -0.8, gapPattern: [0.12, 0.38, 0.58, 0.88] },
-      { r: 0.88, tiltX: 0.6, tiltZ: -0.2, gapPattern: [0.03, 0.33, 0.63, 0.83] },
+      { r: 0.78, tiltX: 0.9, tiltZ: 0.5, gapPattern: [0.05, 0.35, 0.55, 0.85] },
+      { r: 0.90, tiltX: 0.5, tiltZ: 0.7, gapPattern: [0.0, 0.3, 0.55, 0.8] },
       { r: 1.06, tiltX: -0.7, tiltZ: -0.5, gapPattern: [0.0, 0.28, 0.55, 0.9] },
-      { r: 1.14, tiltX: 0.4, tiltZ: 0.3, gapPattern: [0.1, 0.35, 0.6, 0.88] }
+      { r: 1.18, tiltX: -0.4, tiltZ: 0.6, gapPattern: [0.0, 0.4, 0.7, 0.92] }
     ];
 
     for (const def of arcDefs) {
@@ -649,7 +676,7 @@ class JarvisCore {
 
   // ========== 6. 粒子流场 ==========
   createFlowField() {
-    const n = 2000;
+    const n = 800; // 从2000降到800
     const pos = new Float32Array(n * 3);
     const col = new Float32Array(n * 3);
     const base = new Float32Array(n * 3);
@@ -693,32 +720,32 @@ class JarvisCore {
     this.group.add(this.flowPoints);
   }
 
-  // ========== 能量闪烁 ==========
+  // ========== 能量闪烁（对象池化） ==========
   spawnFlicker() {
-    const pos = new THREE.Vector3(
+    // 从池中找一个空闲的
+    let entry = this.flickerPool.find(e => !e.active);
+    if (!entry) return; // 池满了，跳过
+
+    entry.active = true;
+    entry.age = 0;
+    entry.maxAge = 0.15 + Math.random() * 0.35;
+    entry.sprite.position.set(
       (Math.random() - 0.5) * 1.6,
       (Math.random() - 0.5) * 1.6,
       (Math.random() - 0.5) * 1.6
     );
-    const spriteMat = new THREE.SpriteMaterial({
-      map: this.overTex,
-      color: 0xFFFFFF,
-      transparent: true,
-      opacity: 1.0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.position.copy(pos);
-    sprite.scale.setScalar(0.08 + Math.random() * 0.15);
-    this.group.add(sprite);
-    this.flickerSprites.push({ sprite, mat: spriteMat, age: 0, maxAge: 0.15 + Math.random() * 0.35 });
+    entry.sprite.scale.setScalar(0.08 + Math.random() * 0.15);
+    entry.sprite.visible = true;
+    entry.mat.opacity = 1.0;
+    this.flickerSprites.push(entry);
   }
 
   // ========== Update ==========
   update(dt, sp) {
     this.time += dt;
+    this.frameCount++;
     const t = this.time;
+    const updateFull = this.frameCount % 3 === 0; // 每3帧更新一次
 
     // --- 机械核心 ---
     const corePulse = 1.0 + Math.sin(t * 3.5) * 0.12;
@@ -761,14 +788,16 @@ class JarvisCore {
       cross.rotation.z += 0.03 * sp.arcSpeed * dt;
     }
 
-    // --- 电路网络 ---
-    for (const entry of this.circuitLines) {
-      entry.line.material.opacity = entry.baseOpacity * (0.6 + sp.circuitBright * 0.6);
-    }
-    for (const node of this.circuitNodes) {
-      const flick = Math.sin(t * 6 + node.userData.shell * 3) * 0.3 + 0.7;
-      node.material.opacity = flick * sp.circuitBright;
-      node.scale.setScalar(0.7 + Math.sin(t * 4 + node.position.x) * 0.3);
+    // --- 电路网络（每3帧更新） ---
+    if (updateFull) {
+      for (const entry of this.circuitLines) {
+        entry.line.material.opacity = entry.baseOpacity * (0.6 + sp.circuitBright * 0.6);
+      }
+      for (const node of this.circuitNodes) {
+        const flick = Math.sin(t * 6 + node.userData.shell * 3) * 0.3 + 0.7;
+        node.material.opacity = flick * sp.circuitBright;
+        node.scale.setScalar(0.7 + Math.sin(t * 4 + node.position.x) * 0.3);
+      }
     }
 
     // --- 扫描结构 ---
@@ -797,17 +826,20 @@ class JarvisCore {
       const baseArr = this.flowBase;
       const spdArr = this.flowSpeeds;
       const flowSpeed = sp.particleSpeed * 0.004;
+      let moved = false;
 
       for (let i = 0, len = posArr.length / 3; i < len; i++) {
         const ix = i * 3;
         const x = posArr[ix], y = posArr[ix + 1], z = posArr[ix + 2];
-        const d = Math.sqrt(x * x + y * y + z * z) || 1;
+        const d2 = x * x + y * y + z * z;
+        const d = Math.sqrt(d2) || 1;
 
         // 绕Y轴切向运动
-        posArr[ix] += (-z / d) * flowSpeed * spdArr[i];
-        posArr[ix + 2] += (x / d) * flowSpeed * spdArr[i];
-        // 小幅上下浮动
-        posArr[ix + 1] += Math.sin(t * 2 + i * 0.1) * flowSpeed * 0.3;
+        const nx = -z / d, nz = x / d;
+        posArr[ix] += nx * flowSpeed * spdArr[i];
+        posArr[ix + 2] += nz * flowSpeed * spdArr[i];
+        // 小幅上下浮动（降低sin频率）
+        posArr[ix + 1] += Math.sin(t * 1.5 + i * 0.05) * flowSpeed * 0.2;
 
         // 高速态向内聚拢
         if (sp.particleSpeed > 0.9) {
@@ -817,14 +849,18 @@ class JarvisCore {
           posArr[ix + 2] -= (z / d) * pull;
         }
 
-        const nd = Math.sqrt(posArr[ix] ** 2 + posArr[ix + 1] ** 2 + posArr[ix + 2] ** 2);
-        if (nd > 1.5 || nd < 0.15) {
+        // 边界检查用平方比较（省sqrt）
+        const nd2 = posArr[ix] ** 2 + posArr[ix + 1] ** 2 + posArr[ix + 2] ** 2;
+        if (nd2 > 2.25 || nd2 < 0.0225) { // 1.5^2 = 2.25, 0.15^2 = 0.0225
           posArr[ix] = baseArr[ix];
           posArr[ix + 1] = baseArr[ix + 1];
           posArr[ix + 2] = baseArr[ix + 2];
         }
+        moved = true;
       }
-      this.flowPoints.geometry.attributes.position.needsUpdate = true;
+      if (moved) {
+        this.flowPoints.geometry.attributes.position.needsUpdate = true;
+      }
       this.flowPoints.rotation.y += sp.particleSpeed * dt * 0.3;
       this.flowPoints.material.opacity = 0.6 + sp.particleSpeed * 0.3;
     }
@@ -836,8 +872,10 @@ class JarvisCore {
     this.flickerSprites = this.flickerSprites.filter(f => {
       f.age += dt;
       if (f.age >= f.maxAge) {
-        this.group.remove(f.sprite);
-        f.mat.dispose();
+        // 放回池中，不销毁
+        f.active = false;
+        f.sprite.visible = false;
+        f.mat.opacity = 0;
         return false;
       }
       const p = f.age / f.maxAge;
@@ -894,12 +932,18 @@ window.addEventListener('contextmenu', (e) => {
 
 // ==================== Animation Loop ====================
 let prevTime = performance.now() / 1000;
+let frameInterval = 1 / 30; // 限制30fps
+let lastFrameTime = 0;
 
 function animate() {
   requestAnimationFrame(animate);
   const now = performance.now() / 1000;
   const dt = Math.min(now - prevTime, 0.1);
   prevTime = now;
+
+  // 帧率限制
+  if (now - lastFrameTime < frameInterval) return;
+  lastFrameTime = now;
 
   const sp = stateMgr.update(dt);
   jarvis.update(dt, sp);
