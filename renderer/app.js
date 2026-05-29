@@ -4,12 +4,12 @@ console.log('[JARVIS] Starting...');
 
 // ==================== State Manager ====================
 const STATE_PARAMS = {
-  idle:       { coreIntensity: 0.5, arcSpeed: 0.25, circuitBright: 0.4, scanSpeed: 0.35, particleSpeed: 0.35, pulseRate: 0.005, flickering: false },
-  waiting:    { coreIntensity: 0.7, arcSpeed: 0.45, circuitBright: 0.6, scanSpeed: 0.55, particleSpeed: 0.55, pulseRate: 0.010, flickering: false },
-  thinking:   { coreIntensity: 1.0, arcSpeed: 1.0, circuitBright: 1.0, scanSpeed: 1.2, particleSpeed: 1.2, pulseRate: 0.030, flickering: false },
-  responding: { coreIntensity: 0.85, arcSpeed: 0.65, circuitBright: 0.8, scanSpeed: 0.75, particleSpeed: 0.85, pulseRate: 0.018, flickering: false },
-  executing:  { coreIntensity: 0.8, arcSpeed: 0.55, circuitBright: 0.85, scanSpeed: 0.65, particleSpeed: 0.75, pulseRate: 0.015, flickering: false },
-  error:      { coreIntensity: 1.2, arcSpeed: 1.5, circuitBright: 1.0, scanSpeed: 1.5, particleSpeed: 1.5, pulseRate: 0.050, flickering: true  }
+  idle:       { coreIntensity: 0.3, arcSpeed: 0.0,  circuitBright: 0.2, scanSpeed: 0.0,  particleSpeed: 0.0,  pulseRate: 0.002, breathAmp: 0.05, breathFreq: 0.5, flickering: false, chaos: 0.0 },
+  waiting:    { coreIntensity: 0.6, arcSpeed: 0.3,  circuitBright: 0.5, scanSpeed: 0.3,  particleSpeed: 0.3,  pulseRate: 0.008, breathAmp: 0.3,  breathFreq: 1.5, flickering: false, chaos: 0.0 },
+  thinking:   { coreIntensity: 1.0, arcSpeed: 1.0,  circuitBright: 1.0, scanSpeed: 1.0,  particleSpeed: 1.0,  pulseRate: 0.02,  breathAmp: 0.0,  breathFreq: 0.0, flickering: false, chaos: 0.0 },
+  responding: { coreIntensity: 0.8, arcSpeed: 0.6,  circuitBright: 0.8, scanSpeed: 0.6,  particleSpeed: 0.7,  pulseRate: 0.015, breathAmp: 0.1,  breathFreq: 1.0, flickering: false, chaos: 0.0, outward: 1.0 },
+  executing:  { coreIntensity: 0.9, arcSpeed: 0.5,  circuitBright: 0.9, scanSpeed: 0.8,  particleSpeed: 0.6,  pulseRate: 0.04,  breathAmp: 0.0,  breathFreq: 0.0, flickering: false, chaos: 0.0, pulse: 1.0 },
+  error:      { coreIntensity: 1.3, arcSpeed: 1.5,  circuitBright: 1.0, scanSpeed: 1.5,  particleSpeed: 1.2,  pulseRate: 0.05,  breathAmp: 0.0,  breathFreq: 0.0, flickering: true,  chaos: 1.0 }
 };
 
 const STATE_PRIORITY = {
@@ -745,78 +745,84 @@ class JarvisCore {
     this.time += dt;
     this.frameCount++;
     const t = this.time;
-    const updateFull = this.frameCount % 3 === 0; // 每3帧更新一次
+
+    // 呼吸效果
+    const breath = sp.breathAmp > 0 ? Math.sin(t * sp.breathFreq * Math.PI * 2) * sp.breathAmp : 0;
+    const breathScale = 1.0 + breath;
+    const breathOpacity = 1.0 + breath * 0.5;
+
+    // 脉动效果（executing状态的"嗒-嗒-嗒"节奏）
+    const pulse = sp.pulse > 0 ? Math.pow(Math.sin(t * 8) * 0.5 + 0.5, 3) * sp.pulse : 0;
 
     // --- 机械核心 ---
     const corePulse = 1.0 + Math.sin(t * 3.5) * 0.12;
-    this.corePoint.scale.setScalar(corePulse * (0.7 + sp.coreIntensity * 0.6));
-    this.corePoint.material.opacity = 1.0;
-    this.coreSprite.scale.setScalar(0.5 + sp.coreIntensity * 0.35 + Math.sin(t * 2.5) * 0.05);
-    this.coreSprite.material.opacity = 0.85 + sp.coreIntensity * 0.15;
+    const coreScale = corePulse * (0.5 + sp.coreIntensity * 1.0) * breathScale;
+    this.corePoint.scale.setScalar(coreScale);
+    this.corePoint.material.opacity = (0.8 + sp.coreIntensity * 0.2) * breathOpacity;
+    this.coreSprite.scale.setScalar(0.4 + sp.coreIntensity * 0.5 + Math.sin(t * 2.5) * 0.05 + pulse * 0.2);
+    this.coreSprite.material.opacity = (0.7 + sp.coreIntensity * 0.3) * breathOpacity;
 
     for (const ring of this.mechRings) {
-      ring.mesh.rotation.y += ring.speed * sp.arcSpeed * dt * 0.4;
-      ring.mesh.rotation.x += ring.speed * sp.arcSpeed * dt * 0.15;
-      ring.mesh.material.opacity = ring.baseOpacity * (0.7 + sp.coreIntensity * 0.5);
+      ring.mesh.rotation.y += ring.speed * sp.arcSpeed * dt * 0.8;
+      ring.mesh.rotation.x += ring.speed * sp.arcSpeed * dt * 0.3;
+      ring.mesh.material.opacity = ring.baseOpacity * (0.5 + sp.coreIntensity * 0.7) * (0.8 + pulse * 0.4);
     }
 
     for (const blade of this.irisBlades) {
-      blade.line.rotation.y += blade.speed * sp.arcSpeed * dt * 0.5;
-      blade.line.material.opacity = 0.3 + sp.coreIntensity * 0.5;
+      blade.line.rotation.y += blade.speed * sp.arcSpeed * dt * 0.8;
+      blade.line.material.opacity = (0.2 + sp.coreIntensity * 0.7) * (0.8 + pulse * 0.4);
     }
 
     // --- HUD结构 ---
     for (const hud of this.hudRings) {
       if (hud instanceof THREE.Line) {
-        hud.rotation.y += hud.userData.speed * sp.arcSpeed * dt;
-        hud.material.opacity = hud.material.opacity; // preserved
+        hud.rotation.y += hud.userData.speed * sp.arcSpeed * dt * 1.5;
+        hud.material.opacity = hud.material.opacity * (0.6 + sp.arcSpeed * 0.6) * breathOpacity;
       } else if (hud instanceof THREE.Group && hud.userData && hud.userData.parentRing) {
-        hud.rotation.y += hud.userData.parentRing.userData.speed * sp.arcSpeed * dt;
+        hud.rotation.y += hud.userData.parentRing.userData.speed * sp.arcSpeed * dt * 1.5;
         hud.rotation.x = hud.userData.parentRing.userData.tilt.x;
         hud.rotation.z = hud.userData.parentRing.userData.tilt.z;
       } else if (hud instanceof THREE.Group) {
-        hud.rotation.y += 0.05 * sp.arcSpeed * dt;
-        hud.rotation.x += 0.03 * sp.arcSpeed * dt;
+        hud.rotation.y += 0.08 * sp.arcSpeed * dt;
+        hud.rotation.x += 0.05 * sp.arcSpeed * dt;
       }
     }
 
     for (const disk of this.hudDisks) {
-      disk.material.opacity = disk.material.opacity; // keep base
+      disk.material.opacity = disk.material.opacity * (0.5 + sp.circuitBright * 0.5) * (0.8 + pulse * 0.4);
     }
 
     for (const cross of this.crosshairLines) {
-      cross.rotation.z += 0.03 * sp.arcSpeed * dt;
+      cross.rotation.z += 0.05 * sp.arcSpeed * dt;
     }
 
-    // --- 电路网络（每3帧更新） ---
-    if (updateFull) {
-      for (const entry of this.circuitLines) {
-        entry.line.material.opacity = entry.baseOpacity * (0.6 + sp.circuitBright * 0.6);
-      }
-      for (const node of this.circuitNodes) {
-        const flick = Math.sin(t * 6 + node.userData.shell * 3) * 0.3 + 0.7;
-        node.material.opacity = flick * sp.circuitBright;
-        node.scale.setScalar(0.7 + Math.sin(t * 4 + node.position.x) * 0.3);
-      }
+    // --- 电路网络 ---
+    for (const entry of this.circuitLines) {
+      entry.line.material.opacity = entry.baseOpacity * (0.4 + sp.circuitBright * 0.8) * (0.7 + pulse * 0.5);
+    }
+    for (const node of this.circuitNodes) {
+      const flick = Math.sin(t * 6 + node.userData.shell * 3) * 0.3 + 0.7;
+      node.material.opacity = flick * sp.circuitBright * (0.7 + pulse * 0.5);
+      node.scale.setScalar(0.7 + Math.sin(t * 4 + node.position.x) * 0.3);
     }
 
     // --- 扫描结构 ---
     for (const item of this.scanRings) {
       if (item instanceof THREE.Points) {
-        item.rotation.y += item.userData.speed * sp.scanSpeed * dt;
-        item.material.opacity = item.material.opacity; // keep constructor opacity
+        item.rotation.y += item.userData.speed * sp.scanSpeed * dt * 1.5;
+        item.material.opacity = item.material.opacity * (0.4 + sp.scanSpeed * 0.8);
       } else if (item instanceof THREE.Group) {
-        item.rotation.y += item.userData.speed * sp.scanSpeed * dt;
+        item.rotation.y += item.userData.speed * sp.scanSpeed * dt * 1.5;
       }
     }
 
     // --- 数据弧线 ---
     for (const arc of this.dataArcs) {
-      arc.rotation.y += arc.userData.speed * arc.userData.direction * sp.arcSpeed * dt;
-      arc.material.opacity = arc.userData.baseOpacity * (0.7 + sp.arcSpeed * 0.4);
+      arc.rotation.y += arc.userData.speed * arc.userData.direction * sp.arcSpeed * dt * 1.5;
+      arc.material.opacity = arc.userData.baseOpacity * (0.5 + sp.arcSpeed * 0.7);
       if (sp.flickering) {
-        arc.rotation.y += Math.sin(t * 25) * 0.04;
-        arc.rotation.x += Math.cos(t * 20) * 0.03;
+        arc.rotation.y += Math.sin(t * 25) * 0.08;
+        arc.rotation.x += Math.cos(t * 20) * 0.06;
       }
     }
 
@@ -825,7 +831,7 @@ class JarvisCore {
       const posArr = this.flowPoints.geometry.attributes.position.array;
       const baseArr = this.flowBase;
       const spdArr = this.flowSpeeds;
-      const flowSpeed = sp.particleSpeed * 0.004;
+      const flowSpeed = sp.particleSpeed * 0.008;
       let moved = false;
 
       for (let i = 0, len = posArr.length / 3; i < len; i++) {
@@ -838,20 +844,39 @@ class JarvisCore {
         const nx = -z / d, nz = x / d;
         posArr[ix] += nx * flowSpeed * spdArr[i];
         posArr[ix + 2] += nz * flowSpeed * spdArr[i];
-        // 小幅上下浮动（降低sin频率）
-        posArr[ix + 1] += Math.sin(t * 1.5 + i * 0.05) * flowSpeed * 0.2;
+        // 小幅上下浮动
+        posArr[ix + 1] += Math.sin(t * 1.5 + i * 0.05) * flowSpeed * 0.3;
 
-        // 高速态向内聚拢
-        if (sp.particleSpeed > 0.9) {
-          const pull = (sp.particleSpeed - 0.9) * 0.002;
+        // thinking状态：向内聚拢形成有序旋转
+        if (sp.particleSpeed > 0.8) {
+          const pull = (sp.particleSpeed - 0.8) * 0.003;
           posArr[ix] -= (x / d) * pull;
           posArr[ix + 1] -= (y / d) * pull;
           posArr[ix + 2] -= (z / d) * pull;
         }
 
-        // 边界检查用平方比较（省sqrt）
+        // responding状态：向外扩散
+        if (sp.outward > 0) {
+          const push = sp.outward * 0.002;
+          posArr[ix] += (x / d) * push;
+          posArr[ix + 1] += (y / d) * push;
+          posArr[ix + 2] += (z / d) * push;
+        }
+
+        // error状态：混沌发散
+        if (sp.chaos > 0) {
+          posArr[ix] += (Math.random() - 0.5) * sp.chaos * 0.02;
+          posArr[ix + 1] += (Math.random() - 0.5) * sp.chaos * 0.02;
+          posArr[ix + 2] += (Math.random() - 0.5) * sp.chaos * 0.02;
+          // 发散趋势
+          posArr[ix] += (x / d) * sp.chaos * 0.005;
+          posArr[ix + 1] += (y / d) * sp.chaos * 0.005;
+          posArr[ix + 2] += (z / d) * sp.chaos * 0.005;
+        }
+
+        // 边界检查
         const nd2 = posArr[ix] ** 2 + posArr[ix + 1] ** 2 + posArr[ix + 2] ** 2;
-        if (nd2 > 2.25 || nd2 < 0.0225) { // 1.5^2 = 2.25, 0.15^2 = 0.0225
+        if (nd2 > 2.25 || nd2 < 0.0225) {
           posArr[ix] = baseArr[ix];
           posArr[ix + 1] = baseArr[ix + 1];
           posArr[ix + 2] = baseArr[ix + 2];
@@ -861,8 +886,8 @@ class JarvisCore {
       if (moved) {
         this.flowPoints.geometry.attributes.position.needsUpdate = true;
       }
-      this.flowPoints.rotation.y += sp.particleSpeed * dt * 0.3;
-      this.flowPoints.material.opacity = 0.6 + sp.particleSpeed * 0.3;
+      this.flowPoints.rotation.y += sp.particleSpeed * dt * 0.5;
+      this.flowPoints.material.opacity = (0.4 + sp.particleSpeed * 0.5) * breathOpacity;
     }
 
     // --- 能量闪烁 ---
@@ -872,7 +897,6 @@ class JarvisCore {
     this.flickerSprites = this.flickerSprites.filter(f => {
       f.age += dt;
       if (f.age >= f.maxAge) {
-        // 放回池中，不销毁
         f.active = false;
         f.sprite.visible = false;
         f.mat.opacity = 0;
@@ -886,9 +910,9 @@ class JarvisCore {
 
     // --- 错误态闪烁 ---
     if (sp.flickering) {
-      const hueShift = Math.sin(t * 25) * 0.06;
-      this.corePoint.material.color.setHSL(0.12 + hueShift, 0.9, 0.9);
-      this.coreSprite.material.color.setHSL(0.11 + hueShift, 0.8, 0.95);
+      const hueShift = Math.sin(t * 25) * 0.08;
+      this.corePoint.material.color.setHSL(0.05 + hueShift, 0.9, 0.85);
+      this.coreSprite.material.color.setHSL(0.04 + hueShift, 0.85, 0.9);
     } else {
       this.corePoint.material.color.setHSL(0.12, 0.2, 0.97);
       this.coreSprite.material.color.setHSL(0.12, 0.3, 1.0);
