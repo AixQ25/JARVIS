@@ -273,12 +273,12 @@
     <aside class="side">
       <div class="title">
         <h1>JARVIS Visual Lab</h1>
-        <span class="version">layered v2.2</span>
+        <span class="version">layered v3.1</span>
       </div>
 
       <div class="reference">
         <img src="../assets/Jarvis-image.webp" alt="JARVIS reference" />
-        <div class="caption">This iteration models the core sphere, translucent shell, outer shell, and three left-side semi-rings with separate projection planes.</div>
+        <div class="caption">This iteration emphasizes three readable shell depths: core sphere, translucent inner shell, larger outer shell, plus regular broken semi-rings embedded on the left surface.</div>
       </div>
 
       <div class="controls">
@@ -344,7 +344,9 @@
     let target = { ...states[currentState] };
     let samples = [];
     let orderedMarks = [];
+    let shellPlanes = [];
     let leftShells = [];
+    let shellBridges = [];
     let arcBands = [];
     let radialTracks = [];
     let panelTracks = [];
@@ -387,6 +389,13 @@
       return {
         x: CX + Math.cos(angle) * radius * scale + offsetX,
         y: CY + Math.sin(angle) * radius * squash * scale + offsetY
+      };
+    }
+
+    function planePoint(plane, angle, depthScale = 1, sepX = 0, sepY = 0) {
+      return {
+        x: CX + plane.offsetX + sepX + Math.cos(angle) * plane.rx * depthScale,
+        y: CY + plane.offsetY + sepY + Math.sin(angle) * plane.ry * depthScale
       };
     }
 
@@ -477,7 +486,7 @@
       }
 
       candidates.sort((a, b) => b.score - a.score);
-      samples = candidates.slice(0, 4300).map((p, index) => {
+      samples = candidates.slice(0, 3000).map((p, index) => {
         const nx = (p.x / sw - 0.5) * 2;
         const ny = (p.y / sh - 0.5) * 2;
         const x = CX + nx * R * 1.06;
@@ -489,7 +498,7 @@
           x, y, angle, radius, layer,
           phase: rand(index + 1) * Math.PI * 2,
           speed: 0.18 + rand(index + 2) * 0.7,
-          size: 0.45 + rand(index + 3) * 1.3,
+          size: 0.36 + rand(index + 3) * 0.96,
           bright: clamp((p.score - 88) / 190, 0.24, 1.2)
         };
       });
@@ -522,64 +531,128 @@
 
     function buildOrderedStructures() {
       arcBands = [];
+      shellPlanes = [];
       leftShells = [];
+      shellBridges = [];
       radialTracks = [];
       panelTracks = [];
       orderedMarks = [];
       coreRings = [];
 
       const shellDefs = [
-        // 正对视角的表面半圆：像贴在外层球壳上的弧面。
-        { layer: 'mid', rx: 0.94, ry: 0.95, start: 0.50, end: 1.53, width: 1.65, alpha: 0.52, offsetX: -0.02, offsetY: 0.00, seed: 11 },
-        // 垂直向外的半圆：投影成窄而高的左侧壳，负责主要厚度感。
-        { layer: 'rear', rx: 0.48, ry: 1.04, start: 0.49, end: 1.51, width: 1.35, alpha: 0.48, offsetX: -0.58, offsetY: 0.00, seed: 29 },
-        // 介于两者之间的半圆：连接外翻壳与正面壳。
-        { layer: 'front', rx: 0.70, ry: 0.98, start: 0.51, end: 1.49, width: 1.42, alpha: 0.44, offsetX: -0.34, offsetY: 0.01, seed: 47 }
+        {
+          name: 'surface',
+          layer: 'mid',
+          rx: 1.16,
+          ry: 1.10,
+          start: 0.52,
+          end: 1.48,
+          width: 2.15,
+          alpha: 0.68,
+          offsetX: -0.03,
+          offsetY: 0.00,
+          seed: 11,
+          skip: (i) => i % 9 === 3 || i % 14 === 8
+        },
+        {
+          name: 'outward',
+          layer: 'rear',
+          rx: 0.30,
+          ry: 1.22,
+          start: 0.56,
+          end: 1.44,
+          width: 3.25,
+          alpha: 0.72,
+          offsetX: -0.57,
+          offsetY: 0.00,
+          seed: 29,
+          skip: (i) => i % 8 === 2 || i % 15 === 9
+        },
+        {
+          name: 'intermediate',
+          layer: 'front',
+          rx: 0.86,
+          ry: 1.13,
+          start: 0.53,
+          end: 1.47,
+          width: 2.10,
+          alpha: 0.62,
+          offsetX: -0.38,
+          offsetY: 0.00,
+          seed: 47,
+          skip: (i) => i % 10 === 5 || i % 13 === 1
+        }
       ];
 
       shellDefs.forEach((shell, shellIndex) => {
-        const start = Math.PI * shell.start;
-        const end = Math.PI * shell.end;
-        const segmentCount = shellIndex === 2 ? 18 : 26;
+        const plane = {
+          ...shell,
+          rx: R * shell.rx,
+          ry: R * shell.ry,
+          start: Math.PI * shell.start,
+          end: Math.PI * shell.end,
+          offsetX: R * shell.offsetX,
+          offsetY: R * shell.offsetY
+        };
+        shellPlanes.push(plane);
+
+        const start = plane.start;
+        const end = plane.end;
+        const segmentCount = shell.name === 'outward' ? 18 : shellIndex === 2 ? 22 : 28;
         for (let i = 0; i < segmentCount; i++) {
           const slotStart = start + ((end - start) * i) / segmentCount;
           const slotLen = (end - start) / segmentCount;
-          if (rand(shell.seed + i * 7) < 0.16) continue;
-          const inset = rand(shell.seed + i * 13) * slotLen * 0.22;
-          const length = slotLen * (0.46 + rand(shell.seed + i * 17) * 0.42);
+          if (shell.skip(i)) continue;
+          const inset = slotLen * (0.07 + (i % 3) * 0.035);
+          const length = slotLen * (0.52 + (i % 4) * 0.075);
           leftShells.push({
+            planeName: shell.name,
             layer: shell.layer,
-            rx: R * shell.rx,
-            ry: R * shell.ry,
+            rx: plane.rx,
+            ry: plane.ry,
             start: slotStart + inset,
             end: slotStart + inset + length,
-            width: shell.width * (0.82 + rand(shell.seed + i * 19) * 0.38),
-            alpha: shell.alpha * (0.70 + rand(shell.seed + i * 23) * 0.42),
-            offsetX: R * shell.offsetX,
-            offsetY: R * shell.offsetY,
+            width: shell.width * (0.88 + (i % 5) * 0.045),
+            alpha: shell.alpha * (0.76 + (i % 6) * 0.035),
+            offsetX: plane.offsetX,
+            offsetY: plane.offsetY,
             phase: rand(shell.seed + i * 31) * Math.PI * 2,
             speed: (shellIndex === 0 ? 0.018 : shellIndex === 1 ? 0.028 : 0.04)
           });
         }
       });
 
+      const surfacePlane = shellPlanes.find((plane) => plane.name === 'surface');
+      const outwardPlane = shellPlanes.find((plane) => plane.name === 'outward');
+      const intermediatePlane = shellPlanes.find((plane) => plane.name === 'intermediate');
+      const bridgeAngles = [0.60, 0.70, 0.82, 0.94, 1.08, 1.21, 1.34, 1.42].map((v) => v * Math.PI);
+      bridgeAngles.forEach((angle, i) => {
+        shellBridges.push({
+          from: outwardPlane,
+          to: i % 2 === 0 ? intermediatePlane : surfacePlane,
+          angle,
+          alpha: 0.22 + (i % 3) * 0.045,
+          width: i % 2 === 0 ? 1.05 : 0.76,
+          phase: rand(i + 301) * Math.PI * 2
+        });
+      });
+
       const bandDefs = [
-        { layer: 'rear',  radius: 1.02, squash: 0.94, count: 38, width: 0.80, alpha: 0.22, phase: 0.15 },
-        { layer: 'rear',  radius: 0.93, squash: 0.86, count: 36, width: 0.90, alpha: 0.24, phase: 0.48 },
-        { layer: 'mid',   radius: 0.78, squash: 0.80, count: 42, width: 1.16, alpha: 0.43, phase: 0.08 },
-        { layer: 'mid',   radius: 0.66, squash: 0.73, count: 38, width: 1.22, alpha: 0.45, phase: 0.37 },
-        { layer: 'mid',   radius: 0.54, squash: 0.67, count: 34, width: 1.10, alpha: 0.38, phase: 0.66 },
-        { layer: 'front', radius: 0.40, squash: 0.62, count: 28, width: 1.35, alpha: 0.56, phase: 0.22 },
-        { layer: 'front', radius: 0.28, squash: 0.58, count: 22, width: 1.15, alpha: 0.50, phase: 0.58 }
+        { layer: 'rear',  radius: 1.02, squash: 0.98, count: 42, width: 0.75, alpha: 0.19, phase: 0.15 },
+        { layer: 'rear',  radius: 0.90, squash: 0.88, count: 40, width: 0.85, alpha: 0.22, phase: 0.48 },
+        { layer: 'mid',   radius: 0.76, squash: 0.78, count: 48, width: 1.12, alpha: 0.38, phase: 0.08 },
+        { layer: 'mid',   radius: 0.64, squash: 0.70, count: 42, width: 1.16, alpha: 0.40, phase: 0.37 },
+        { layer: 'mid',   radius: 0.52, squash: 0.64, count: 38, width: 1.02, alpha: 0.33, phase: 0.66 },
+        { layer: 'front', radius: 0.38, squash: 0.58, count: 32, width: 1.28, alpha: 0.50, phase: 0.22 },
+        { layer: 'front', radius: 0.26, squash: 0.50, count: 26, width: 1.06, alpha: 0.45, phase: 0.58 }
       ];
 
       bandDefs.forEach((band, bandIndex) => {
         for (let i = 0; i < band.count; i++) {
           const slot = i / band.count;
           const start = (slot * Math.PI * 2) + band.phase * Math.PI;
-          const length = Math.PI * (0.035 + rand(bandIndex * 91 + i) * 0.095);
-          const gapGate = rand(bandIndex * 131 + i) > 0.18;
-          if (!gapGate) continue;
+          const length = Math.PI * (0.035 + (i % 5) * 0.014 + rand(bandIndex * 91 + i) * 0.018);
+          if (i % 11 === 3 || i % 17 === 8) continue;
           arcBands.push({
             layer: band.layer,
             radius: R * band.radius * (0.985 + rand(bandIndex * 11 + i) * 0.025),
@@ -588,7 +661,7 @@
             end: start + length,
             width: band.width,
             alpha: band.alpha,
-            speed: (band.layer === 'rear' ? 0.07 : band.layer === 'mid' ? 0.13 : 0.22) * (rand(i + bandIndex) > 0.5 ? 1 : -1),
+            speed: (band.layer === 'rear' ? 0.045 : band.layer === 'mid' ? 0.09 : 0.16) * (i % 2 === 0 ? 1 : -1),
             phase: rand(i + bandIndex * 44) * Math.PI * 2
           });
         }
@@ -640,7 +713,7 @@
 
       samples
         .filter((p, i) => p.bright > 0.62 && i % 7 === 0)
-        .slice(0, 760)
+        .slice(0, 620)
         .forEach((p, i) => {
           const quantized = Math.round((p.angle + Math.PI) / (Math.PI / 12)) * (Math.PI / 12) - Math.PI;
           const tangent = quantized + Math.PI / 2;
@@ -671,7 +744,7 @@
 
     function updateMetrics() {
       pointCountEl.textContent = samples.length.toLocaleString();
-      const total = leftShells.length + arcBands.length + radialTracks.length + panelTracks.length + orderedMarks.length;
+      const total = shellPlanes.length + leftShells.length + shellBridges.length + arcBands.length + radialTracks.length + panelTracks.length + orderedMarks.length;
       lineCountEl.textContent = total.toLocaleString();
     }
 
@@ -726,10 +799,10 @@
       ctx.ellipse(CX, CY, R * 0.82, R * 0.74, 0.02, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = `rgba(81, 184, 255, ${0.08 + 0.08 * params.scan})`;
+      ctx.strokeStyle = `rgba(81, 184, 255, ${0.025 + 0.025 * params.scan})`;
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.ellipse(CX + 8, CY + R * 0.64, R * 0.52, R * 0.075, -0.05, 0, Math.PI * 2);
+      ctx.ellipse(CX + 8, CY + R * 0.65, R * 0.50, R * 0.065, -0.02, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
@@ -739,34 +812,40 @@
       ctx.globalCompositeOperation = 'lighter';
       const breathing = 1 + Math.sin(t * (0.7 + params.pulse)) * 0.01;
 
-      const outerFill = ctx.createRadialGradient(CX - 4, CY, R * 0.40, CX - 4, CY, R * 1.10);
-      outerFill.addColorStop(0, `rgba(255, 156, 31, ${0.018 * params.brightness})`);
-      outerFill.addColorStop(0.70, `rgba(255, 132, 24, ${0.030 * params.brightness})`);
+      const outerFill = ctx.createRadialGradient(CX - 8, CY, R * 0.42, CX - 8, CY, R * 1.11);
+      outerFill.addColorStop(0, `rgba(255, 168, 37, ${0.014 * params.brightness})`);
+      outerFill.addColorStop(0.68, `rgba(255, 132, 24, ${0.038 * params.brightness})`);
       outerFill.addColorStop(1, 'rgba(255, 132, 24, 0)');
       ctx.fillStyle = outerFill;
       ctx.beginPath();
-      ctx.ellipse(CX - 2, CY, R * 1.04 * breathing, R * 0.98 * breathing, 0, 0, Math.PI * 2);
+      ctx.ellipse(CX - 4, CY, R * 1.05 * breathing, R * 1.01 * breathing, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = rgba(colors.rear, 0.12 * params.brightness);
-      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = rgba(colors.rear, 0.15 * params.brightness);
+      ctx.lineWidth = 1.15;
       ctx.beginPath();
-      ctx.ellipse(CX - 2, CY, R * 1.04, R * 0.98, 0, 0, Math.PI * 2);
+      ctx.ellipse(CX - 4, CY, R * 1.05, R * 1.01, 0, 0, Math.PI * 2);
       ctx.stroke();
 
-      const shellFill = ctx.createRadialGradient(CX + 2, CY, R * 0.22, CX + 2, CY, R * 0.76);
-      shellFill.addColorStop(0, `rgba(255, 221, 116, ${0.026 * params.brightness})`);
-      shellFill.addColorStop(0.58, `rgba(255, 166, 34, ${0.048 * params.brightness})`);
+      const shellFill = ctx.createRadialGradient(CX + 1, CY, R * 0.18, CX + 1, CY, R * 0.78);
+      shellFill.addColorStop(0, `rgba(255, 221, 116, ${0.032 * params.brightness})`);
+      shellFill.addColorStop(0.58, `rgba(255, 166, 34, ${0.054 * params.brightness})`);
       shellFill.addColorStop(1, 'rgba(255, 166, 34, 0)');
       ctx.fillStyle = shellFill;
       ctx.beginPath();
-      ctx.ellipse(CX + 2, CY, R * 0.74 * breathing, R * 0.71 * breathing, 0, 0, Math.PI * 2);
+      ctx.ellipse(CX + 1, CY, R * 0.75 * breathing, R * 0.75 * breathing, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = rgba(colors.mid, 0.16 * params.brightness);
-      ctx.lineWidth = 0.9;
+      ctx.strokeStyle = rgba(colors.mid, 0.18 * params.brightness);
+      ctx.lineWidth = 1.0;
       ctx.beginPath();
-      ctx.ellipse(CX + 2, CY, R * 0.74, R * 0.71, 0, 0, Math.PI * 2);
+      ctx.ellipse(CX + 1, CY, R * 0.75, R * 0.75, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = rgba(colors.front, 0.22 * params.brightness);
+      ctx.lineWidth = 0.85;
+      ctx.beginPath();
+      ctx.ellipse(CX, CY, R * 0.34, R * 0.34, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
@@ -780,7 +859,7 @@
         if (p.layer !== layer) continue;
         const tr = layerTransform(p, layer, t);
         const twinkle = 0.78 + 0.22 * Math.sin(t * (0.7 + p.speed * params.motion) + p.phase);
-        const layerAlpha = layer === 'rear' ? 0.18 : layer === 'mid' ? 0.29 : 0.36;
+        const layerAlpha = layer === 'rear' ? 0.10 : layer === 'mid' ? 0.17 : 0.24;
         const alpha = layerAlpha * p.bright * params.brightness * twinkle * tr.alpha;
         const size = p.size * (layer === 'rear' ? 0.75 : layer === 'mid' ? 0.95 : 1.18);
         const c = layer === 'rear' ? colors.rear : layer === 'mid' ? colors.mid : colors.front;
@@ -797,11 +876,11 @@
       ctx.globalCompositeOperation = 'lighter';
       arcBands.forEach((arc, index) => {
         if (arc.layer !== layer) return;
-        const layerPhase = layer === 'rear' ? -0.028 : layer === 'mid' ? 0.0 : 0.028;
+        const layerPhase = layer === 'rear' ? -0.008 : layer === 'mid' ? 0.0 : 0.008;
         const rotation = t * arc.speed * params.motion + Math.sin(t * 0.45 + arc.phase) * 0.004;
-        const scale = layer === 'rear' ? 1.035 + layerSeparation * 0.035 : layer === 'front' ? 0.97 : 1;
-        const ox = layer === 'rear' ? -10 * layerSeparation : layer === 'front' ? 8 * layerSeparation : 0;
-        const oy = layer === 'rear' ? -7 * layerSeparation : layer === 'front' ? 5 * layerSeparation : 0;
+        const scale = layer === 'rear' ? 1.030 + layerSeparation * 0.030 : layer === 'front' ? 0.972 : 1;
+        const ox = layer === 'rear' ? -9 * layerSeparation : layer === 'front' ? 7 * layerSeparation : 0;
+        const oy = layer === 'rear' ? -2 * layerSeparation : layer === 'front' ? 2 * layerSeparation : 0;
         const scanBoost = 1 + params.scan * (0.18 + 0.12 * Math.sin(t * 2 + index));
         const c = layer === 'rear' ? colors.rear : layer === 'mid' ? colors.mid : colors.front;
         ctx.strokeStyle = rgba(c, arc.alpha * params.brightness * scanBoost);
@@ -824,16 +903,85 @@
     function drawLeftShells(layer, t) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
+      shellPlanes.forEach((plane) => {
+        if (plane.layer !== layer) return;
+        const layerDepth = layer === 'rear' ? 1.02 : layer === 'mid' ? 1.0 : 0.99;
+        const sepX = layer === 'rear' ? -5 * layerSeparation : layer === 'mid' ? -1 * layerSeparation : 5 * layerSeparation;
+        const sepY = layer === 'rear' ? -1 * layerSeparation : layer === 'mid' ? 0 : 2 * layerSeparation;
+        const c = layer === 'rear' ? colors.rear : layer === 'mid' ? colors.mid : colors.front;
+
+        ctx.strokeStyle = rgba(c, plane.alpha * 0.34 * params.brightness);
+        ctx.lineWidth = plane.width * 0.74;
+        ctx.beginPath();
+        ctx.ellipse(
+          CX + plane.offsetX + sepX,
+          CY + plane.offsetY + sepY,
+          plane.rx * layerDepth,
+          plane.ry * layerDepth,
+          0,
+          plane.start,
+          plane.end
+        );
+        ctx.stroke();
+
+          const innerScale = plane.name === 'surface' ? 0.84 : plane.name === 'intermediate' ? 0.72 : 0.58;
+        ctx.strokeStyle = rgba(plane.name === 'surface' ? colors.mid : colors.white, plane.alpha * 0.20 * params.brightness);
+        ctx.lineWidth = plane.name === 'surface' ? 0.95 : 0.82;
+        ctx.beginPath();
+        ctx.ellipse(
+          CX + plane.offsetX + sepX + R * 0.055,
+          CY + plane.offsetY + sepY,
+          plane.rx * innerScale * layerDepth,
+          plane.ry * 0.94 * layerDepth,
+          0,
+          plane.start + 0.05,
+          plane.end - 0.05
+        );
+        ctx.stroke();
+
+        if (plane.name !== 'surface') {
+          const rimStart = -0.44 * Math.PI;
+          const rimEnd = 0.44 * Math.PI;
+          ctx.strokeStyle = rgba(plane.name === 'outward' ? colors.mid : colors.front, plane.alpha * 0.30 * params.brightness);
+          ctx.lineWidth = plane.width * (plane.name === 'outward' ? 0.68 : 0.48);
+          ctx.beginPath();
+          ctx.ellipse(
+            CX + plane.offsetX + sepX,
+            CY + plane.offsetY + sepY,
+            plane.rx * (plane.name === 'outward' ? 1.18 : 0.92) * layerDepth,
+            plane.ry * (plane.name === 'outward' ? 0.98 : 0.93) * layerDepth,
+            0,
+            rimStart,
+            rimEnd
+          );
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = rgba(colors.white, plane.alpha * 0.12 * params.brightness);
+        ctx.lineWidth = 0.62;
+        ctx.beginPath();
+        ctx.ellipse(
+          CX + plane.offsetX + sepX,
+          CY + plane.offsetY + sepY,
+          plane.rx * layerDepth,
+          plane.ry * layerDepth,
+          0,
+          plane.start + 0.02,
+          plane.end - 0.02
+        );
+        ctx.stroke();
+      });
+
       leftShells.forEach((shell, index) => {
         if (shell.layer !== layer) return;
-        const layerDepth = layer === 'rear' ? 1.03 : layer === 'mid' ? 1.0 : 0.98;
-        const sepX = layer === 'rear' ? -4 * layerSeparation : layer === 'mid' ? 0 : 5 * layerSeparation;
-        const sepY = layer === 'rear' ? -2 * layerSeparation : layer === 'mid' ? 0 : 3 * layerSeparation;
+        const layerDepth = layer === 'rear' ? 1.02 : layer === 'mid' ? 1.0 : 0.99;
+        const sepX = layer === 'rear' ? -5 * layerSeparation : layer === 'mid' ? -1 * layerSeparation : 5 * layerSeparation;
+        const sepY = layer === 'rear' ? -1 * layerSeparation : layer === 'mid' ? 0 : 2 * layerSeparation;
         const scan = 0.84 + 0.16 * Math.sin(t * params.scan * 1.5 + shell.phase);
-        const rotation = Math.sin(t * shell.speed * params.motion + shell.phase) * 0.010;
+        const rotation = Math.sin(t * shell.speed * params.motion + shell.phase) * 0.004;
         const c = layer === 'rear' ? colors.rear : layer === 'mid' ? colors.mid : colors.front;
-        ctx.strokeStyle = rgba(c, shell.alpha * params.brightness * scan);
-        ctx.lineWidth = shell.width;
+        ctx.strokeStyle = rgba(c, shell.alpha * 1.08 * params.brightness * scan);
+        ctx.lineWidth = shell.width * 1.04;
         ctx.beginPath();
         ctx.ellipse(
           CX + shell.offsetX + sepX,
@@ -846,8 +994,8 @@
         );
         ctx.stroke();
 
-        if (index % 6 === 0) {
-          ctx.strokeStyle = rgba(colors.white, shell.alpha * 0.30 * params.brightness * scan);
+        if (index % 5 === 0) {
+          ctx.strokeStyle = rgba(colors.white, shell.alpha * 0.42 * params.brightness * scan);
           ctx.lineWidth = 0.55;
           ctx.beginPath();
           ctx.ellipse(
@@ -861,6 +1009,271 @@
           );
           ctx.stroke();
         }
+
+        if (index % 7 === 0) {
+          const endPoint = planePoint(shell, shell.end + rotation, layerDepth, sepX, sepY);
+          ctx.fillStyle = rgba(colors.white, shell.alpha * 0.38 * params.brightness * scan);
+          ctx.beginPath();
+          ctx.arc(endPoint.x, endPoint.y, 1.45, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+      ctx.restore();
+    }
+
+    function drawShellBridges(t) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      shellBridges.forEach((bridge, index) => {
+        const phase = 0.72 + 0.28 * Math.sin(t * params.scan * 1.3 + bridge.phase);
+        const from = planePoint(bridge.from, bridge.angle, 1.02, -5 * layerSeparation, -1 * layerSeparation);
+        const toSepX = bridge.to.layer === 'front' ? 5 * layerSeparation : -1 * layerSeparation;
+        const toSepY = bridge.to.layer === 'front' ? 2 * layerSeparation : 0;
+        const to = planePoint(bridge.to, bridge.angle + Math.sin(index) * 0.015, 1, toSepX, toSepY);
+        ctx.strokeStyle = rgba(index % 2 === 0 ? colors.mid : colors.rear, bridge.alpha * params.brightness * phase);
+        ctx.lineWidth = bridge.width;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    function drawLeftTireBands(t) {
+      ctx.save();
+      ctx.lineCap = 'butt';
+
+      const tireBands = [
+        { cx: CX - R * 0.58, rx: R * 0.32, ry: R * 1.22, color: colors.mid, alpha: 0.66, band: 32, start: 0.56, end: 1.44, perpendicular: true },
+        { cx: CX - R * 0.39, rx: R * 0.78, ry: R * 1.14, color: colors.front, alpha: 0.40, band: 20, start: 0.54, end: 1.46 },
+        { cx: CX - R * 0.08, rx: R * 1.08, ry: R * 1.10, color: colors.rear, alpha: 0.23, band: 12, start: 0.53, end: 1.47 }
+      ];
+
+      ctx.globalCompositeOperation = 'source-over';
+      tireBands.forEach((arc) => {
+        const start = arc.start * Math.PI;
+        const end = arc.end * Math.PI;
+        const baseAlpha = arc.alpha * (arc.perpendicular ? 0.46 : 0.24) * params.brightness;
+
+        ctx.strokeStyle = `rgba(23, 12, 3, ${clamp(baseAlpha, 0, 0.44)})`;
+        ctx.lineWidth = arc.band * (arc.perpendicular ? 1.72 : 1.48);
+        ctx.beginPath();
+        ctx.ellipse(arc.cx + (arc.perpendicular ? R * 0.04 : 0), CY, arc.rx * (arc.perpendicular ? 1.10 : 1), arc.ry * 1.005, 0, start, end);
+        ctx.stroke();
+
+        ctx.strokeStyle = rgba(arc.color, arc.alpha * 0.12 * params.brightness);
+        ctx.lineWidth = arc.band * (arc.perpendicular ? 1.22 : 0.94);
+        ctx.beginPath();
+        ctx.ellipse(arc.cx, CY, arc.rx, arc.ry, 0, start, end);
+        ctx.stroke();
+      });
+
+      ctx.globalCompositeOperation = 'lighter';
+      tireBands.forEach((arc, arcIndex) => {
+        const start = arc.start * Math.PI;
+        const end = arc.end * Math.PI;
+        const segments = arc.perpendicular ? 12 : arcIndex === 2 ? 15 : 13;
+
+        for (let i = 0; i < segments; i++) {
+          if ((i + arcIndex) % 6 === 2) continue;
+          const slot = (end - start) / segments;
+          const a0 = start + i * slot + slot * 0.09;
+          const a1 = a0 + slot * (0.58 + (i % 3) * 0.08);
+          const active = 0.82 + 0.18 * Math.sin(t * params.scan * 1.1 + i * 0.63);
+
+          ctx.strokeStyle = rgba(arc.color, arc.alpha * 0.24 * params.brightness * active);
+          ctx.lineWidth = arc.band;
+          ctx.beginPath();
+          ctx.ellipse(arc.cx, CY, arc.rx, arc.ry, 0, a0, a1);
+          ctx.stroke();
+
+          ctx.strokeStyle = rgba(arc.color, arc.alpha * 0.42 * params.brightness * active);
+          ctx.lineWidth = arc.band * 0.36;
+          ctx.beginPath();
+          ctx.ellipse(arc.cx, CY, arc.rx, arc.ry, 0, a0 + slot * 0.04, a1 - slot * 0.03);
+          ctx.stroke();
+
+          if (arc.perpendicular) {
+            ctx.strokeStyle = rgba(colors.white, arc.alpha * 0.18 * params.brightness * active);
+            ctx.lineWidth = arc.band * 0.16;
+            ctx.beginPath();
+            ctx.ellipse(arc.cx + R * 0.12, CY, arc.rx * 1.08, arc.ry * 0.985, 0, a0 + slot * 0.10, a1 - slot * 0.08);
+            ctx.stroke();
+          }
+        }
+
+        if (arc.perpendicular) {
+          [start, end].forEach((angle, edgeIndex) => {
+            const inner = {
+              x: arc.cx + R * 0.13 + Math.cos(angle) * arc.rx * 0.78,
+              y: CY + Math.sin(angle) * arc.ry * 0.96
+            };
+            const outer = {
+              x: arc.cx - R * 0.04 + Math.cos(angle) * arc.rx * 1.18,
+              y: CY + Math.sin(angle) * arc.ry * 1.015
+            };
+            ctx.strokeStyle = rgba(edgeIndex === 0 ? colors.front : colors.rear, arc.alpha * 0.42 * params.brightness);
+            ctx.lineWidth = arc.band * 0.22;
+            ctx.beginPath();
+            ctx.moveTo(inner.x, inner.y);
+            ctx.lineTo(outer.x, outer.y);
+            ctx.stroke();
+          });
+        }
+      });
+
+      ctx.globalCompositeOperation = 'source-over';
+      const occlusion = ctx.createRadialGradient(CX - R * 0.26, CY, R * 0.04, CX - R * 0.26, CY, R * 0.86);
+      occlusion.addColorStop(0, 'rgba(16, 9, 2, 0)');
+      occlusion.addColorStop(0.46, 'rgba(14, 8, 2, 0.12)');
+      occlusion.addColorStop(1, 'rgba(3, 5, 9, 0.42)');
+      ctx.fillStyle = occlusion;
+      ctx.beginPath();
+      ctx.ellipse(CX - R * 0.14, CY, R * 0.76, R * 1.04, 0, Math.PI * 0.50, Math.PI * 1.50);
+      ctx.fill();
+
+      ctx.strokeStyle = `rgba(2, 4, 8, ${0.22 + 0.10 * params.brightness})`;
+      ctx.lineWidth = R * 0.045;
+      ctx.beginPath();
+      ctx.ellipse(CX - R * 0.45, CY, R * 0.36, R * 1.13, 0, Math.PI * 0.56, Math.PI * 1.44);
+      ctx.stroke();
+
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = rgba(colors.rear, 0.20 * params.brightness);
+      ctx.lineWidth = 6.4;
+      ctx.beginPath();
+      ctx.ellipse(CX - R * 0.45, CY, R * 0.36, R * 1.13, 0, Math.PI * 0.56, Math.PI * 1.44);
+      ctx.stroke();
+
+      ctx.strokeStyle = rgba(colors.white, 0.11 * params.brightness);
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.ellipse(CX - R * 0.54, CY, R * 0.26, R * 1.17, 0, Math.PI * 0.58, Math.PI * 1.42);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawLeftShellHighlights(t) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const signatureCrescents = [
+        { cx: CX - R * 0.58, rx: R * 0.32, ry: R * 1.22, color: colors.mid, alpha: 0.54, width: 7.2, start: 0.56, end: 1.44, perpendicular: true },
+        { cx: CX - R * 0.39, rx: R * 0.78, ry: R * 1.14, color: colors.front, alpha: 0.36, width: 4.2, start: 0.54, end: 1.46 },
+        { cx: CX - R * 0.08, rx: R * 1.08, ry: R * 1.10, color: colors.rear, alpha: 0.22, width: 2.6, start: 0.53, end: 1.47 }
+      ];
+
+      signatureCrescents.forEach((arc, arcIndex) => {
+        const start = arc.start * Math.PI;
+        const end = arc.end * Math.PI;
+        const segments = arc.perpendicular ? 15 : arcIndex === 2 ? 18 : 15;
+        for (let i = 0; i < segments; i++) {
+          if ((i + arcIndex) % 6 === 2) continue;
+          const slot = (end - start) / segments;
+          const a0 = start + i * slot + slot * 0.08;
+          const a1 = a0 + slot * ((arc.perpendicular ? 0.64 : 0.56) + (i % 3) * 0.08);
+          const active = 0.84 + 0.16 * Math.sin(t * params.scan * 1.2 + i * 0.7);
+          ctx.strokeStyle = rgba(arc.color, arc.alpha * params.brightness * active);
+          ctx.lineWidth = arc.width;
+          ctx.beginPath();
+          ctx.ellipse(arc.cx, CY, arc.rx, arc.ry, 0, a0, a1);
+          ctx.stroke();
+
+          if (arc.perpendicular && i % 3 !== 1) {
+            ctx.strokeStyle = rgba(colors.white, arc.alpha * 0.38 * params.brightness * active);
+            ctx.lineWidth = arc.width * 0.44;
+            ctx.beginPath();
+            ctx.ellipse(arc.cx + R * 0.09, CY, arc.rx * 1.05, arc.ry * 0.985, 0, a0 + slot * 0.08, a1 - slot * 0.04);
+            ctx.stroke();
+          }
+        }
+
+        if (arc.perpendicular) {
+          const connectorAngles = [0.55, 0.68, 1.32, 1.45].map((v) => v * Math.PI);
+          connectorAngles.forEach((angle, i) => {
+            const x1 = arc.cx + Math.cos(angle) * arc.rx;
+            const y1 = CY + Math.sin(angle) * arc.ry;
+            const x2 = arc.cx + R * 0.16 + Math.cos(angle) * arc.rx * 1.04;
+            const y2 = CY + Math.sin(angle) * arc.ry * 0.985;
+            ctx.strokeStyle = rgba(i < 2 ? colors.mid : colors.rear, arc.alpha * 0.30 * params.brightness);
+            ctx.lineWidth = arc.width * 0.36;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+          });
+        }
+
+        if (arcIndex < 2) {
+          const rimStart = -0.42 * Math.PI;
+          const rimEnd = 0.42 * Math.PI;
+          for (let i = 0; i < 8; i++) {
+            if (i % 4 === 1) continue;
+            const slot = (rimEnd - rimStart) / 8;
+            const a0 = rimStart + i * slot + slot * 0.12;
+            const a1 = a0 + slot * 0.48;
+            ctx.strokeStyle = rgba(arcIndex === 0 ? colors.rear : colors.mid, arc.alpha * 0.48 * params.brightness);
+            ctx.lineWidth = arc.width * 0.58;
+            ctx.beginPath();
+            ctx.ellipse(arc.cx + (arc.perpendicular ? R * 0.08 : 0), CY, arc.rx * (arc.perpendicular ? 1.35 : 0.86), arc.ry * 0.93, 0, a0, a1);
+            ctx.stroke();
+          }
+        }
+      });
+
+      shellPlanes.forEach((plane, planeIndex) => {
+        const layerDepth = plane.layer === 'rear' ? 1.02 : plane.layer === 'mid' ? 1.0 : 0.99;
+        const sepX = plane.layer === 'rear' ? -5 * layerSeparation : plane.layer === 'mid' ? -1 * layerSeparation : 5 * layerSeparation;
+        const sepY = plane.layer === 'rear' ? -1 * layerSeparation : plane.layer === 'mid' ? 0 : 2 * layerSeparation;
+        const c = plane.layer === 'rear' ? colors.rear : plane.layer === 'mid' ? colors.mid : colors.front;
+        const segmentCount = plane.name === 'surface' ? 18 : 14;
+
+        for (let i = 0; i < segmentCount; i++) {
+          if ((i + planeIndex) % 5 === 1) continue;
+          const slot = (plane.end - plane.start) / segmentCount;
+          const start = plane.start + i * slot + slot * 0.08;
+          const end = start + slot * (0.46 + (i % 3) * 0.10);
+          const active = 0.82 + 0.18 * Math.sin(t * params.scan * 1.4 + i + planeIndex);
+          ctx.strokeStyle = rgba(c, plane.alpha * 0.52 * params.brightness * active);
+          ctx.lineWidth = plane.width * (plane.name === 'surface' ? 0.48 : 0.58);
+          ctx.beginPath();
+          ctx.ellipse(
+            CX + plane.offsetX + sepX,
+            CY + plane.offsetY + sepY,
+            plane.rx * layerDepth,
+            plane.ry * layerDepth,
+            0,
+            start,
+            end
+          );
+          ctx.stroke();
+        }
+
+        if (plane.name !== 'surface') {
+          const rimStart = -0.44 * Math.PI;
+          const rimEnd = 0.44 * Math.PI;
+          const rimCount = 10;
+          for (let i = 0; i < rimCount; i++) {
+            if (i % 4 === 1) continue;
+            const slot = (rimEnd - rimStart) / rimCount;
+            const start = rimStart + i * slot + slot * 0.12;
+            const end = start + slot * 0.52;
+            ctx.strokeStyle = rgba(plane.name === 'outward' ? colors.mid : colors.front, plane.alpha * 0.46 * params.brightness);
+            ctx.lineWidth = plane.width * 0.45;
+            ctx.beginPath();
+            ctx.ellipse(
+              CX + plane.offsetX + sepX,
+              CY + plane.offsetY + sepY,
+              plane.rx * 0.92 * layerDepth,
+              plane.ry * 0.93 * layerDepth,
+              0,
+              start,
+              end
+            );
+            ctx.stroke();
+          }
+        }
       });
       ctx.restore();
     }
@@ -873,9 +1286,9 @@
         const drift = Math.sin(t * 0.9 + track.phase) * 0.012 * params.motion;
         const inner = track.inner + Math.sin(t * 1.3 + index) * params.pulse * 2.5;
         const outer = track.outer + Math.sin(t * 1.5 + index) * params.pulse * 3.0;
-        const scale = layer === 'rear' ? 1.035 : layer === 'front' ? 0.97 : 1;
-        const ox = layer === 'rear' ? -10 * layerSeparation : layer === 'front' ? 8 * layerSeparation : 0;
-        const oy = layer === 'rear' ? -7 * layerSeparation : layer === 'front' ? 5 * layerSeparation : 0;
+        const scale = layer === 'rear' ? 1.028 : layer === 'front' ? 0.972 : 1;
+        const ox = layer === 'rear' ? -9 * layerSeparation : layer === 'front' ? 7 * layerSeparation : 0;
+        const oy = layer === 'rear' ? -2 * layerSeparation : layer === 'front' ? 2 * layerSeparation : 0;
         const p1 = ellipsePoint(inner, 0.90, track.angle + drift, scale, ox, oy);
         const p2 = ellipsePoint(outer, 0.90, track.angle + drift, scale, ox, oy);
         const c = layer === 'rear' ? colors.rear : layer === 'mid' ? colors.mid : colors.front;
@@ -929,39 +1342,39 @@
     }
 
     function drawCore(t) {
-      const beam = clamp((params.beam * 0.76 + manualBeam * 0.48) * params.brightness, 0, 1.35);
+      const beam = clamp((params.beam * 0.58 + manualBeam * 0.36) * params.brightness, 0, 1.0);
       const pulse = 1 + Math.sin(t * (1.7 + params.pulse * 3.0)) * (0.06 + params.pulse * 0.055);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
 
       const beamGradient = ctx.createLinearGradient(CX - R * 0.95, CY, CX + R * 1.02, CY);
       beamGradient.addColorStop(0, 'rgba(255, 132, 24, 0)');
-      beamGradient.addColorStop(0.30, `rgba(255, 164, 34, ${0.12 * beam})`);
-      beamGradient.addColorStop(0.48, `rgba(255, 248, 210, ${0.64 * beam})`);
-      beamGradient.addColorStop(0.58, `rgba(255, 184, 44, ${0.24 * beam})`);
+      beamGradient.addColorStop(0.30, `rgba(255, 164, 34, ${0.09 * beam})`);
+      beamGradient.addColorStop(0.48, `rgba(255, 248, 210, ${0.42 * beam})`);
+      beamGradient.addColorStop(0.58, `rgba(255, 184, 44, ${0.18 * beam})`);
       beamGradient.addColorStop(1, 'rgba(255, 132, 24, 0)');
       ctx.strokeStyle = beamGradient;
-      ctx.lineWidth = 6 + beam * 7;
+      ctx.lineWidth = 3.6 + beam * 4.8;
       ctx.beginPath();
-      ctx.moveTo(CX - R * 0.86, CY + Math.sin(t * 0.8) * 1.2);
-      ctx.lineTo(CX + R * 0.88, CY + Math.sin(t * 0.9 + 1) * 1.5);
+      ctx.moveTo(CX - R * 0.76, CY + Math.sin(t * 0.8) * 0.8);
+      ctx.lineTo(CX + R * 0.78, CY + Math.sin(t * 0.9 + 1) * 1.0);
       ctx.stroke();
 
       ctx.strokeStyle = rgba(colors.white, 0.72 * beam);
       ctx.lineWidth = 1.2 + beam * 0.9;
       ctx.beginPath();
-      ctx.moveTo(CX - R * 0.48, CY - 0.5);
-      ctx.lineTo(CX + R * 0.64, CY + 0.5);
+      ctx.moveTo(CX - R * 0.42, CY - 0.5);
+      ctx.lineTo(CX + R * 0.58, CY + 0.5);
       ctx.stroke();
 
-      const core = ctx.createRadialGradient(CX, CY, 0, CX, CY, 88 * pulse);
+      const core = ctx.createRadialGradient(CX, CY, 0, CX, CY, 82 * pulse);
       core.addColorStop(0, `rgba(255,255,255,${0.88 * params.brightness})`);
       core.addColorStop(0.16, `rgba(255,247,193,${0.70 * params.brightness})`);
       core.addColorStop(0.42, `rgba(255,175,36,${0.26 * params.brightness})`);
       core.addColorStop(1, 'rgba(255,126,18,0)');
       ctx.fillStyle = core;
       ctx.beginPath();
-      ctx.arc(CX, CY, 86 * pulse, 0, Math.PI * 2);
+      ctx.arc(CX, CY, 82 * pulse, 0, Math.PI * 2);
       ctx.fill();
 
       coreRings.forEach((ring, index) => {
@@ -986,7 +1399,7 @@
         ctx.strokeStyle = rgba(colors.white, 0.13 * params.brightness * params.scan);
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.ellipse(CX - 10 * layerSeparation, CY - 7 * layerSeparation, r, r * (0.82 + index * 0.04), -0.02, start, end);
+        ctx.ellipse(CX - 8 * layerSeparation, CY - 2 * layerSeparation, r, r * (0.88 + index * 0.035), -0.005, start, end);
         ctx.stroke();
       });
       ctx.restore();
@@ -1010,6 +1423,8 @@
       drawSphereVolumes(time);
 
       drawLeftShells('rear', time);
+      drawShellBridges(time);
+      drawLeftTireBands(time);
       drawSampleLayer('rear', time);
       drawArcBands('rear', time);
       drawPanelTracks(time);
@@ -1025,6 +1440,7 @@
       drawLeftShells('front', time);
       drawArcBands('front', time);
       drawOrderedMarks('front', time);
+      drawLeftShellHighlights(time);
       drawCore(time);
     }
 

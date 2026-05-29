@@ -129,6 +129,51 @@ function createPartialRingPoints(radius, startAngle, endAngle, totalSegments, ga
   return points;
 }
 
+class EllipseArcCurve3 extends THREE.Curve {
+  constructor(def, startAngle, endAngle) {
+    super();
+    this.def = def;
+    this.startAngle = startAngle;
+    this.endAngle = endAngle;
+  }
+
+  getPoint(t) {
+    const a = this.startAngle + (this.endAngle - this.startAngle) * t;
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    return new THREE.Vector3(
+      this.def.cx + cos * this.def.rx,
+      this.def.cy + sin * this.def.ry,
+      this.def.cz + cos * (this.def.depth || 0)
+    );
+  }
+}
+
+function createArcPoints3D(def, startAngle, endAngle, segments = 32) {
+  const points = [];
+  for (let i = 0; i <= segments; i++) {
+    const a = startAngle + (endAngle - startAngle) * (i / segments);
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    points.push(new THREE.Vector3(
+      def.cx + cos * def.rx,
+      def.cy + sin * def.ry,
+      def.cz + cos * (def.depth || 0)
+    ));
+  }
+  return points;
+}
+
+function pointOnArcDef(def, angle) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return new THREE.Vector3(
+    def.cx + cos * def.rx,
+    def.cy + sin * def.ry,
+    def.cz + cos * (def.depth || 0)
+  );
+}
+
 // ==================== Holographic AI Core ====================
 class JarvisCore {
   constructor(scene) {
@@ -155,6 +200,11 @@ class JarvisCore {
     this.scanRings = [];
 
     this.dataArcs = [];
+    this.shellLayers = [];
+    this.leftSemiRings = [];
+    this.leftShellGroup = new THREE.Group();
+    this.leftShellGroup.renderOrder = 8;
+    this.group.add(this.leftShellGroup);
 
     this.flowPoints = null;
     this.flowBase = null;
@@ -166,16 +216,6 @@ class JarvisCore {
 
     this.time = 0;
     this.init();
-  }
-
-  init() {
-    this.createMechanicalCore();
-    this.createHUDStructure();
-    this.createRadialCircuits();
-    this.createScanStructures();
-    this.createDataArcs();
-    this.createFlowField();
-    this.initFlickerPool();
   }
 
   // 初始化闪烁对象池
@@ -199,11 +239,14 @@ class JarvisCore {
 
   init() {
     this.createMechanicalCore();
+    this.createLayeredShells();
     this.createHUDStructure();
+    this.createLeftEmbeddedSemiRings();
     this.createRadialCircuits();
     this.createScanStructures();
     this.createDataArcs();
     this.createFlowField();
+    this.initFlickerPool();
   }
 
   // ========== 1. 机械瞳孔核心 ==========
@@ -294,6 +337,171 @@ class JarvisCore {
       });
       this.group.add(new THREE.Line(geo, mat));
     }
+  }
+
+  // ========== 2. 三层球壳体积 ==========
+  createLayeredShells() {
+    const glows = [
+      { scale: 2.35, color: 0xFF7A18, opacity: 0.090, speed: 0.006 },
+      { scale: 1.45, color: 0xFFB62E, opacity: 0.120, speed: -0.010 }
+    ];
+
+    glows.forEach((cfg) => {
+      const mat = new THREE.SpriteMaterial({
+        map: this.glowTex,
+        color: cfg.color,
+        transparent: true,
+        opacity: cfg.opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const glow = new THREE.Sprite(mat);
+      glow.scale.set(cfg.scale, cfg.scale, 1);
+      glow.renderOrder = -1;
+      this.shellLayers.push({ obj: glow, mat, baseOpacity: cfg.opacity, speed: cfg.speed, pulse: 0.12 });
+      this.group.add(glow);
+    });
+
+    const shells = [
+      { radius: 1.10, color: 0xFF7A18, opacity: 0.115, speed: 0.018 },
+      { radius: 0.78, color: 0xFFB62E, opacity: 0.135, speed: -0.026 },
+      { radius: 0.34, color: 0xFFE082, opacity: 0.165, speed: 0.040 }
+    ];
+
+    shells.forEach((cfg, index) => {
+      const geo = new THREE.SphereGeometry(cfg.radius, 36, 18);
+      const mat = new THREE.MeshBasicMaterial({
+        color: cfg.color,
+        transparent: true,
+        opacity: cfg.opacity,
+        wireframe: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: true
+      });
+      const shell = new THREE.Mesh(geo, mat);
+      shell.scale.z = 0.82;
+      shell.renderOrder = index;
+      this.shellLayers.push({ obj: shell, mat, baseOpacity: cfg.opacity, speed: cfg.speed, pulse: 0.25 + index * 0.08 });
+      this.group.add(shell);
+    });
+
+    const silhouettes = [
+      { r: 1.13, y: 1.00, color: 0xFF8F00, opacity: 0.30, parts: 22, skip: 4 },
+      { r: 0.80, y: 0.76, color: 0xFFC247, opacity: 0.34, parts: 18, skip: 5 },
+      { r: 0.36, y: 0.34, color: 0xFFE8A0, opacity: 0.40, parts: 12, skip: 4 }
+    ];
+
+    silhouettes.forEach((cfg, ringIndex) => {
+      const def = { cx: 0, cy: 0, cz: 0.02 * ringIndex, rx: cfg.r, ry: cfg.y, depth: 0.02 };
+      for (let i = 0; i < cfg.parts; i++) {
+        if ((i + ringIndex) % cfg.skip === 1) continue;
+        const slot = Math.PI * 2 / cfg.parts;
+        const start = i * slot + slot * 0.10;
+        const end = start + slot * (0.48 + (i % 3) * 0.07);
+        const geo = new THREE.BufferGeometry().setFromPoints(createArcPoints3D(def, start, end, 10));
+        const mat = new THREE.LineBasicMaterial({
+          color: cfg.color,
+          transparent: true,
+          opacity: cfg.opacity,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const line = new THREE.Line(geo, mat);
+        line.renderOrder = 2 + ringIndex;
+        this.shellLayers.push({ obj: line, mat, baseOpacity: cfg.opacity, speed: cfg.r > 1 ? 0.01 : -0.016, pulse: 0.18 });
+        this.group.add(line);
+      }
+    });
+  }
+
+  addTubeArc(parent, def, startAngle, endAngle, tubeRadius, color, opacity, renderOrder = 10) {
+    const curve = new EllipseArcCurve3(def, startAngle, endAngle);
+    const geo = new THREE.TubeGeometry(curve, 28, tubeRadius, 12, false);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = renderOrder;
+    parent.add(mesh);
+    this.leftSemiRings.push({ obj: mesh, mat, baseOpacity: opacity, pulse: 0.24 + tubeRadius * 4 });
+    return mesh;
+  }
+
+  // ========== 3. 左侧嵌入式半圆厚环 ==========
+  createLeftEmbeddedSemiRings() {
+    const rings = [
+      {
+        name: 'outward',
+        cx: -0.62, cy: 0.01, cz: 0.02, rx: 0.31, ry: 1.18, depth: -0.36,
+        start: 0.56, end: 1.44, color: 0xFF9F1F, edgeColor: 0xFFE29A,
+        tube: 0.045, parts: 12, opacity: 0.78, order: 14
+      },
+      {
+        name: 'middle',
+        cx: -0.42, cy: 0.00, cz: 0.00, rx: 0.70, ry: 1.08, depth: -0.17,
+        start: 0.54, end: 1.46, color: 0xFFC24A, edgeColor: 0xFFE9AD,
+        tube: 0.026, parts: 14, opacity: 0.48, order: 12
+      },
+      {
+        name: 'surface',
+        cx: -0.08, cy: 0.00, cz: -0.03, rx: 1.05, ry: 1.02, depth: -0.04,
+        start: 0.53, end: 1.47, color: 0xFF8618, edgeColor: 0xFFB13B,
+        tube: 0.015, parts: 16, opacity: 0.30, order: 9
+      }
+    ];
+
+    rings.forEach((ring, ringIndex) => {
+      const start = ring.start * Math.PI;
+      const end = ring.end * Math.PI;
+
+      this.addTubeArc(this.leftShellGroup, ring, start, end, ring.tube * 2.15, ring.color, ring.opacity * 0.16, ring.order - 1);
+      this.addTubeArc(this.leftShellGroup, ring, start, end, ring.tube * 1.10, ring.color, ring.opacity * 0.14, ring.order);
+
+      const slot = (end - start) / ring.parts;
+      for (let i = 0; i < ring.parts; i++) {
+        if ((i + ringIndex) % 5 === 2) continue;
+        const a0 = start + i * slot + slot * 0.08;
+        const a1 = a0 + slot * (0.58 + (i % 3) * 0.08);
+        this.addTubeArc(this.leftShellGroup, ring, a0, a1, ring.tube, ring.color, ring.opacity, ring.order + 1);
+
+        if (i % 2 === 0) {
+          const edgeDef = {
+            ...ring,
+            cx: ring.cx + (ring.name === 'outward' ? 0.055 : 0.018),
+            rx: ring.rx * (ring.name === 'outward' ? 0.92 : 0.97),
+            ry: ring.ry * 0.985,
+            depth: ring.depth * 0.88
+          };
+          this.addTubeArc(this.leftShellGroup, edgeDef, a0 + slot * 0.08, a1 - slot * 0.06, ring.tube * 0.34, ring.edgeColor, ring.opacity * 0.62, ring.order + 2);
+        }
+      }
+    });
+
+    const bridgeAngles = [0.62, 0.74, 0.88, 1.02, 1.16, 1.30, 1.40].map(v => v * Math.PI);
+    bridgeAngles.forEach((angle, index) => {
+      const from = pointOnArcDef(rings[0], angle);
+      const targetRing = index % 2 === 0 ? rings[1] : rings[2];
+      const to = pointOnArcDef(targetRing, angle + (index % 2 === 0 ? 0.012 : -0.010));
+      const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+      const mat = new THREE.LineBasicMaterial({
+        color: index % 2 === 0 ? 0xFFC247 : 0xFF8A19,
+        transparent: true,
+        opacity: 0.24,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const line = new THREE.Line(geo, mat);
+      line.renderOrder = 11;
+      this.leftShellGroup.add(line);
+      this.leftSemiRings.push({ obj: line, mat, baseOpacity: 0.24, pulse: 0.14 });
+    });
   }
 
   // ========== 2. 内层HUD瞄准结构 ==========
@@ -755,6 +963,21 @@ class JarvisCore {
     // 脉动效果（executing状态的"嗒-嗒-嗒"节奏）
     const pulse = sp.pulse > 0 ? Math.pow(Math.sin(t * 8) * 0.5 + 0.5, 3) * sp.pulse : 0;
 
+    // --- 固定视角三层球壳与左侧嵌入半圆 ---
+    for (const shell of this.shellLayers) {
+      shell.obj.rotation.y += shell.speed * sp.arcSpeed * dt;
+      shell.mat.opacity = shell.baseOpacity * (0.45 + sp.circuitBright * 0.80) * (0.92 + pulse * shell.pulse);
+    }
+
+    const shellBreathe = 1 + breath * 0.045 + pulse * 0.018;
+    this.leftShellGroup.scale.set(shellBreathe, shellBreathe, shellBreathe);
+    this.leftShellGroup.rotation.y = Math.sin(t * 0.42) * sp.arcSpeed * 0.018;
+    this.leftShellGroup.rotation.x = Math.sin(t * 0.31) * sp.arcSpeed * 0.006;
+
+    for (const ring of this.leftSemiRings) {
+      ring.mat.opacity = ring.baseOpacity * (0.48 + sp.circuitBright * 0.86) * (0.90 + pulse * ring.pulse) * breathOpacity;
+    }
+
     // --- 机械核心 ---
     const corePulse = 1.0 + Math.sin(t * 3.5) * 0.12;
     const coreScale = corePulse * (0.5 + sp.coreIntensity * 1.0) * breathScale;
@@ -939,8 +1162,22 @@ container.appendChild(renderer.domElement);
 
 const stateMgr = new StateManager();
 const jarvis = new JarvisCore(scene);
+const electronAPI = window.electronAPI || {
+  onUpdateState: () => {},
+  showContextMenu: () => {}
+};
+const previewParams = new URLSearchParams(window.location.search);
 
-window.electronAPI.onUpdateState((data) => {
+if (previewParams.has('debugBg')) {
+  document.body.style.background = '#030509';
+}
+
+const previewState = previewParams.get('state');
+if (previewState && STATE_PARAMS[previewState]) {
+  stateMgr.setState(previewState, 0.8, 'browser-preview');
+}
+
+electronAPI.onUpdateState((data) => {
   stateMgr.setState(data.state, data.intensity, data.source || 'manual');
 });
 
@@ -952,7 +1189,7 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('contextmenu', (e) => {
   e.preventDefault();
-  window.electronAPI.showContextMenu();
+  electronAPI.showContextMenu();
 });
 
 // ==================== Animation Loop ====================
