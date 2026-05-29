@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(powershell -Command 'Get-ChildItem -Recurse -File -Depth 3 | Where-Object { $_.FullName -notmatch '\\\\''node_modules|\\\\.git|dist'\\\\'' } | Select-Object FullName')"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(npm start *)",
+      "Bash(Start-Sleep -Seconds 3)",
+      "Bash(Get-Content \"C:\\\\Users\\\\AixQ\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--vibe-coding-apps-JARVIS\\\\bdad136f-e872-4601-8cb3-44fefdb2517f\\\\tasks\\\\bs0inmf82.output\")",
+      "Bash(node -e \"console.log\\(require\\('F:/vibe coding/apps/JARVIS/node_modules/electron/package.json'\\).version\\)\")",
+      "Bash(node --check \"F:/vibe coding/apps/JARVIS/renderer/app.js\")"
     ]
   }
 }
