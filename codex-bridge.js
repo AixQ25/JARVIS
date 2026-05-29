@@ -55,35 +55,44 @@ process.stdin.on('end', () => {
     timestamp: Date.now()
   });
 
-  // 发送HTTP请求到JARVIS
+  // 发送HTTP请求到JARVIS。JARVIS 端口被占用时会自动切到后续端口，
+  // 所以桥接脚本也要按同样顺序尝试。
+  const ports = [3210, 3211, 3212, 3213, 3214, 3215];
+  postToJarvis(ports, postData);
+});
+
+function postToJarvis(ports, postData) {
+  const [port, ...rest] = ports;
+  if (!port) {
+    // JARVIS没运行，静默失败
+    process.stdout.write('{}');
+    process.exit(0);
+  }
+
   const req = http.request({
     hostname: 'localhost',
-    port: 3210,
+    port,
     path: '/state',
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(postData)
     },
-    timeout: 3000
-  }, (res) => {
-    // 成功，返回空JSON
+    timeout: 1000
+  }, () => {
     process.stdout.write('{}');
     process.exit(0);
   });
 
   req.on('error', () => {
-    // JARVIS没运行，静默失败
-    process.stdout.write('{}');
-    process.exit(0);
+    postToJarvis(rest, postData);
   });
 
   req.on('timeout', () => {
     req.destroy();
-    process.stdout.write('{}');
-    process.exit(0);
+    postToJarvis(rest, postData);
   });
 
   req.write(postData);
   req.end();
-});
+}

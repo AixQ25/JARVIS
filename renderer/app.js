@@ -34,9 +34,10 @@ class StateManager {
     const newPriority = STATE_PRIORITY[state] || 0;
     const currentPriority = STATE_PRIORITY[this.currentStateName] || 0;
     const shouldUpdate =
+      source === 'manual' ||
+      source === this.source ||
       newPriority > currentPriority ||
-      (newPriority === currentPriority && source === this.source) ||
-      source === 'manual';
+      newPriority === currentPriority;
     if (!shouldUpdate) return;
 
     this.from = { ...this.current };

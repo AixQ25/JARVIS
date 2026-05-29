@@ -3,6 +3,7 @@ const path = require('path');
 const { exec } = require('child_process');
 const config = require('./config');
 const httpServer = require('./server');
+const { CodexSessionWatcher } = require('./codex-session-watcher');
 
 app.commandLine.appendSwitch('disable-gpu-compositing');
 app.disableHardwareAcceleration();
@@ -13,6 +14,7 @@ let opencodeCheckInterval;
 let lastOpenCodeState = false;
 let codexCheckInterval;
 let lastCodexState = false;
+let codexSessionWatcher;
 
 process.on('uncaughtException', (err) => {
   console.error('[Main] Uncaught:', err);
@@ -58,14 +60,25 @@ function createWindow() {
   console.log('[Main] Window created');
 }
 
+function emitState(state, intensity = 0.5, source = 'manual') {
+  const stateData = {
+    state,
+    intensity,
+    source,
+    timestamp: Date.now()
+  };
+
+  global.currentState = stateData.state;
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('update-state', stateData);
+  }
+}
+
 app.whenReady().then(() => {
   createWindow();
 
   httpServerInstance = httpServer.start(config.httpPort, (stateData) => {
-    global.currentState = stateData.state;
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('update-state', stateData);
-    }
+    emitState(stateData.state, stateData.intensity, stateData.source || 'manual');
   });
 
   // 启动OpenCode进程检测
@@ -73,6 +86,10 @@ app.whenReady().then(() => {
   
   // 启动Codex进程检测
   startCodexDetection();
+
+  // 启动Codex会话日志监听。Codex Desktop 当前不触发 config.toml hooks，
+  // 所以这里主动读取本地 session jsonl 来感知用户输入和工具调用。
+  startCodexSessionWatcher();
 
   console.log('[Main] App ready');
 }).catch(err => console.error('[Main] Failed:', err));
@@ -105,28 +122,10 @@ function checkOpenCodeProcess() {
       
       if (isRunning) {
         console.log('[OpenCode] Process detected → waiting');
-        const stateData = {
-          state: 'waiting',
-          intensity: 0.5,
-          source: 'opencode',
-          timestamp: Date.now()
-        };
-        global.currentState = stateData.state;
-        if (mainWindow && mainWindow.webContents) {
-          mainWindow.webContents.send('update-state', stateData);
-        }
+        emitState('waiting', 0.5, 'opencode');
       } else {
         console.log('[OpenCode] Process not found → idle');
-        const stateData = {
-          state: 'idle',
-          intensity: 0.5,
-          source: 'opencode',
-          timestamp: Date.now()
-        };
-        global.currentState = stateData.state;
-        if (mainWindow && mainWindow.webContents) {
-          mainWindow.webContents.send('update-state', stateData);
-        }
+        emitState('idle', 0.5, 'opencode');
       }
     }
   });
@@ -136,6 +135,7 @@ app.on('window-all-closed', () => {
   if (httpServerInstance) httpServerInstance.close();
   if (opencodeCheckInterval) clearInterval(opencodeCheckInterval);
   if (codexCheckInterval) clearInterval(codexCheckInterval);
+  if (codexSessionWatcher) codexSessionWatcher.stop();
   app.quit();
 });
 
@@ -167,29 +167,24 @@ function checkCodexProcess() {
       
       if (isRunning) {
         console.log('[Codex] Process detected → waiting');
-        const stateData = {
-          state: 'waiting',
-          intensity: 0.5,
-          source: 'codex',
-          timestamp: Date.now()
-        };
-        global.currentState = stateData.state;
-        if (mainWindow && mainWindow.webContents) {
-          mainWindow.webContents.send('update-state', stateData);
-        }
+        emitState('waiting', 0.5, 'codex');
       } else {
         console.log('[Codex] Process not found → idle');
-        const stateData = {
-          state: 'idle',
-          intensity: 0.5,
-          source: 'codex',
-          timestamp: Date.now()
-        };
-        global.currentState = stateData.state;
-        if (mainWindow && mainWindow.webContents) {
-          mainWindow.webContents.send('update-state', stateData);
-        }
+        emitState('idle', 0.5, 'codex');
       }
     }
   });
+}
+
+function startCodexSessionWatcher() {
+  console.log('[Main] Starting Codex session watcher...');
+
+  codexSessionWatcher = new CodexSessionWatcher({
+    onStateChange: (stateData) => {
+      console.log(`[CodexSession] ${stateData.state} (intensity: ${stateData.intensity})`);
+      emitState(stateData.state, stateData.intensity, stateData.source);
+    }
+  });
+
+  codexSessionWatcher.start();
 }
