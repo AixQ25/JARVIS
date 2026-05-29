@@ -219,3 +219,42 @@ JARVIS 新增 4 个 Hook 端点，接收 Claude Code 的事件推送：
 
 ---
 
+## Codex 集成（2026-05-29）
+
+### 桥接脚本方案
+
+Codex CLI 不支持 HTTP Hook，只支持 Command Hook。通过桥接脚本实现集成：
+
+```
+Codex Hook → codex-bridge.js → HTTP POST → JARVIS (localhost:3210)
+```
+
+### 新增文件
+
+- `codex-bridge.js`：桥接脚本，接收 Codex hooks 的 command 调用，转发 HTTP 请求到 JARVIS
+- `codex-hooks.md`：Codex 配置说明文档
+
+### 状态映射
+
+| Codex 事件 | JARVIS 状态 | 说明 |
+|------------|-------------|------|
+| SessionStart | waiting | 会话开始 |
+| UserPromptSubmit | thinking | 用户提交 prompt |
+| PreToolUse | executing | 工具执行前 |
+| PostToolUse | executing | 工具执行后 |
+| Stop | idle | 响应完成 |
+| SubagentStart | thinking | 子任务开始 |
+| SubagentStop | idle | 子任务完成 |
+
+### 进程检测
+
+- 每 3 秒检测一次 `codex.exe` 进程
+- 进程存在 → waiting
+- 进程不存在 → idle
+
+### 配置方式
+
+在 `~/.codex/config.toml` 中添加 hooks 配置，详见 `codex-hooks.md`。
+
+---
+

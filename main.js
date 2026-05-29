@@ -11,6 +11,8 @@ let mainWindow;
 let httpServerInstance;
 let opencodeCheckInterval;
 let lastOpenCodeState = false;
+let codexCheckInterval;
+let lastCodexState = false;
 
 process.on('uncaughtException', (err) => {
   console.error('[Main] Uncaught:', err);
@@ -68,6 +70,9 @@ app.whenReady().then(() => {
 
   // 启动OpenCode进程检测
   startOpenCodeDetection();
+  
+  // 启动Codex进程检测
+  startCodexDetection();
 
   console.log('[Main] App ready');
 }).catch(err => console.error('[Main] Failed:', err));
@@ -129,5 +134,62 @@ function checkOpenCodeProcess() {
 
 app.on('window-all-closed', () => {
   if (httpServerInstance) httpServerInstance.close();
+  if (opencodeCheckInterval) clearInterval(opencodeCheckInterval);
+  if (codexCheckInterval) clearInterval(codexCheckInterval);
   app.quit();
 });
+
+// Codex进程检测
+function startCodexDetection() {
+  console.log('[Main] Starting Codex process detection...');
+  
+  codexCheckInterval = setInterval(() => {
+    checkCodexProcess();
+  }, 3000);
+  
+  // 立即检查一次
+  checkCodexProcess();
+}
+
+function checkCodexProcess() {
+  // Windows: tasklist检查codex.exe
+  exec('tasklist /FI "IMAGENAME eq codex.exe" /NH', (error, stdout) => {
+    if (error) {
+      // 命令执行失败，忽略
+      return;
+    }
+    
+    const isRunning = stdout.includes('codex.exe');
+    
+    // 状态变化时才发送
+    if (isRunning !== lastCodexState) {
+      lastCodexState = isRunning;
+      
+      if (isRunning) {
+        console.log('[Codex] Process detected → waiting');
+        const stateData = {
+          state: 'waiting',
+          intensity: 0.5,
+          source: 'codex',
+          timestamp: Date.now()
+        };
+        global.currentState = stateData.state;
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('update-state', stateData);
+        }
+      } else {
+        console.log('[Codex] Process not found → idle');
+        const stateData = {
+          state: 'idle',
+          intensity: 0.5,
+          source: 'codex',
+          timestamp: Date.now()
+        };
+        global.currentState = stateData.state;
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send('update-state', stateData);
+        }
+      }
+    }
+  });
+}
