@@ -16,6 +16,12 @@ let codexCheckInterval;
 let lastCodexState = false;
 let codexSessionWatcher;
 
+// 键盘活动检测相关
+let activityCheckInterval;
+let lastActivityState = false;
+let lastInputTime = Date.now();
+let currentStatePriority = 0; // 当前状态的优先级，用于避免低优先级覆盖高优先级
+
 process.on('uncaughtException', (err) => {
   console.error('[Main] Uncaught:', err);
 });
@@ -91,6 +97,9 @@ app.whenReady().then(() => {
   // 所以这里主动读取本地 session jsonl 来感知用户输入和工具调用。
   startCodexSessionWatcher();
 
+  // 启动键盘活动检测
+  startActivityDetection();
+
   console.log('[Main] App ready');
 }).catch(err => console.error('[Main] Failed:', err));
 
@@ -136,6 +145,7 @@ app.on('window-all-closed', () => {
   if (opencodeCheckInterval) clearInterval(opencodeCheckInterval);
   if (codexCheckInterval) clearInterval(codexCheckInterval);
   if (codexSessionWatcher) codexSessionWatcher.stop();
+  if (activityCheckInterval) clearInterval(activityCheckInterval);
   app.quit();
 });
 
@@ -187,4 +197,77 @@ function startCodexSessionWatcher() {
   });
 
   codexSessionWatcher.start();
+}
+
+// 键盘活动检测
+function startActivityDetection() {
+  console.log('[Main] Starting activity detection...');
+  
+  // 每1秒检查一次用户活动
+  activityCheckInterval = setInterval(() => {
+    checkUserActivity();
+  }, 1000);
+}
+
+function checkUserActivity() {
+  // 使用PowerShell获取用户最后输入时间
+  // GetLastInputInfo返回的是系统启动后的毫秒数
+  const psScript = `
+    Add-Type @"
+      using System;
+      using System.Runtime.InteropServices;
+      public struct LASTINPUTINFO {
+        public uint cbSize;
+        public uint dwTime;
+      }
+      public class User32 {
+        [DllImport("user32.dll")]
+        public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+      }
+"@
+    $lii = New-Object LASTINPUTINFO
+    $lii.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($lii)
+    [User32]::GetLastInputInfo([ref]$lii) | Out-Null
+    $lastInput = $lii.dwTime
+    $tickCount = [Environment]::TickCount
+    $idleTime = $tickCount - $lastInput
+    Write-Output $idleTime
+  `;
+  
+  exec(`powershell -Command "${psScript}"`, (error, stdout) => {
+    if (error) {
+      console.error('[Activity] PowerShell error:', error.message);
+      return;
+    }
+    
+    const idleTimeMs = parseInt(stdout.trim());
+    
+    if (isNaN(idleTimeMs)) {
+      console.error('[Activity] Invalid idle time:', stdout);
+      return;
+    }
+    
+    // 如果最近3秒内有输入活动
+    const isActive = idleTimeMs < 3000;
+    
+    // 每10秒输出一次当前状态（调试用）
+    if (Date.now() % 10000 < 1000) {
+      console.log(`[Activity] Idle: ${idleTimeMs}ms, Active: ${isActive}`);
+    }
+    
+    // 状态变化时才发送
+    if (isActive !== lastActivityState) {
+      lastActivityState = isActive;
+      
+      if (isActive) {
+        // 用户正在活动 → waiting状态
+        console.log('[Activity] User active → waiting');
+        emitState('waiting', 0.5, 'activity');
+      } else {
+        // 用户空闲 → idle状态
+        console.log('[Activity] User idle → idle');
+        emitState('idle', 0.5, 'activity');
+      }
+    }
+  });
 }
