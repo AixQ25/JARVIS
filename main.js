@@ -210,7 +210,7 @@ function startActivityDetection() {
 }
 
 function checkUserActivity() {
-  // 使用PowerShell脚本文件获取用户最后输入时间
+  // 使用PowerShell脚本文件检测键盘活动
   const scriptPath = path.join(__dirname, 'get-idle-time.ps1');
   
   exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, (error, stdout) => {
@@ -219,27 +219,27 @@ function checkUserActivity() {
       return;
     }
     
-    const idleTimeMs = parseInt(stdout.trim());
+    const result = parseInt(stdout.trim());
     
-    if (isNaN(idleTimeMs)) {
-      console.error('[Activity] Invalid idle time:', stdout);
+    if (isNaN(result)) {
+      console.error('[Activity] Invalid result:', stdout);
       return;
     }
     
-    // 如果最近3秒内有输入活动
-    const isActive = idleTimeMs < 3000;
+    // result为0表示键盘活动，99999表示空闲
+    const isKeyboardActive = result === 0;
     
     // 状态变化时才发送
-    if (isActive !== lastActivityState) {
-      lastActivityState = isActive;
+    if (isKeyboardActive !== lastActivityState) {
+      lastActivityState = isKeyboardActive;
       
-      if (isActive) {
-        // 用户正在活动 → waiting状态
-        console.log('[Activity] User active → waiting');
+      if (isKeyboardActive) {
+        // 检测到键盘活动 → waiting状态
+        console.log('[Activity] Keyboard active → waiting');
         emitState('waiting', 0.5, 'activity');
       } else {
-        // 用户空闲 → idle状态
-        console.log('[Activity] User idle → idle');
+        // 键盘空闲 → idle状态
+        console.log('[Activity] Keyboard idle → idle');
         emitState('idle', 0.5, 'activity');
       }
     }
