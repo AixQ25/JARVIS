@@ -210,31 +210,10 @@ function startActivityDetection() {
 }
 
 function checkUserActivity() {
-  // 使用PowerShell获取用户最后输入时间
-  // GetLastInputInfo返回的是系统启动后的毫秒数
-  const psScript = `
-    Add-Type @"
-      using System;
-      using System.Runtime.InteropServices;
-      public struct LASTINPUTINFO {
-        public uint cbSize;
-        public uint dwTime;
-      }
-      public class User32 {
-        [DllImport("user32.dll")]
-        public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
-      }
-"@
-    $lii = New-Object LASTINPUTINFO
-    $lii.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($lii)
-    [User32]::GetLastInputInfo([ref]$lii) | Out-Null
-    $lastInput = $lii.dwTime
-    $tickCount = [Environment]::TickCount
-    $idleTime = $tickCount - $lastInput
-    Write-Output $idleTime
-  `;
+  // 使用PowerShell脚本文件获取用户最后输入时间
+  const scriptPath = path.join(__dirname, 'get-idle-time.ps1');
   
-  exec(`powershell -Command "${psScript}"`, (error, stdout) => {
+  exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, (error, stdout) => {
     if (error) {
       console.error('[Activity] PowerShell error:', error.message);
       return;
@@ -249,11 +228,6 @@ function checkUserActivity() {
     
     // 如果最近3秒内有输入活动
     const isActive = idleTimeMs < 3000;
-    
-    // 每10秒输出一次当前状态（调试用）
-    if (Date.now() % 10000 < 1000) {
-      console.log(`[Activity] Idle: ${idleTimeMs}ms, Active: ${isActive}`);
-    }
     
     // 状态变化时才发送
     if (isActive !== lastActivityState) {
