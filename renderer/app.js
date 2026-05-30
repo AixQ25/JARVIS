@@ -4,10 +4,10 @@ console.log('[JARVIS] Starting...');
 
 // ==================== State Manager ====================
 const STATE_PARAMS = {
-  idle:       { coreIntensity: 0.28, arcSpeed: 0.02, circuitBright: 0.16, scanSpeed: 0.02, particleSpeed: 0.02, pulseRate: 0.001, breathAmp: 0.045, breathFreq: 0.45, flickering: false, chaos: 0.0, outward: 0.0, pulse: 0.0 },
-  waiting:    { coreIntensity: 0.58, arcSpeed: 0.28, circuitBright: 0.50, scanSpeed: 0.30, particleSpeed: 0.30, pulseRate: 0.006, breathAmp: 0.16,  breathFreq: 1.2,  flickering: false, chaos: 0.0, outward: 0.0, pulse: 0.10 },
-  thinking:   { coreIntensity: 1.06, arcSpeed: 1.00, circuitBright: 1.02, scanSpeed: 1.00, particleSpeed: 1.00, pulseRate: 0.018, breathAmp: 0.0,   breathFreq: 0.0,  flickering: false, chaos: 0.0, outward: 0.0, pulse: 0.14 },
-  responding: { coreIntensity: 0.84, arcSpeed: 0.64, circuitBright: 0.84, scanSpeed: 0.62, particleSpeed: 0.72, pulseRate: 0.014, breathAmp: 0.08,  breathFreq: 1.0,  flickering: false, chaos: 0.0, outward: 0.46, pulse: 0.26 },
+  idle:       { coreIntensity: 0.28, arcSpeed: 0.02, circuitBright: 0.16, scanSpeed: 0.02, particleSpeed: 0.02, pulseRate: 0.008, breathAmp: 0.045, breathFreq: 0.45, flickering: false, chaos: 0.0, outward: 0.0, pulse: 0.0 },
+  waiting:    { coreIntensity: 0.58, arcSpeed: 0.28, circuitBright: 0.50, scanSpeed: 0.30, particleSpeed: 0.30, pulseRate: 0.015, breathAmp: 0.22,  breathFreq: 1.8,  flickering: false, chaos: 0.0, outward: 0.0, pulse: 0.10 },
+  thinking:   { coreIntensity: 1.06, arcSpeed: 1.40, circuitBright: 1.02, scanSpeed: 1.00, particleSpeed: 1.00, pulseRate: 0.018, breathAmp: 0.0,   breathFreq: 0.0,  flickering: false, chaos: 0.0, outward: 0.0, pulse: 0.14 },
+  responding: { coreIntensity: 0.84, arcSpeed: 0.64, circuitBright: 0.84, scanSpeed: 0.62, particleSpeed: 0.72, pulseRate: 0.014, breathAmp: 0.08,  breathFreq: 1.0,  flickering: false, chaos: 0.0, outward: 0.85, pulse: 0.26 },
   executing:  { coreIntensity: 0.92, arcSpeed: 0.56, circuitBright: 1.04, scanSpeed: 0.88, particleSpeed: 0.60, pulseRate: 0.030, breathAmp: 0.0,   breathFreq: 0.0,  flickering: false, chaos: 0.0, outward: 0.0, pulse: 0.86 },
   error:      { coreIntensity: 1.18, arcSpeed: 1.08, circuitBright: 1.05, scanSpeed: 1.18, particleSpeed: 0.92, pulseRate: 0.040, breathAmp: 0.0,   breathFreq: 0.0,  flickering: true,  chaos: 0.50, outward: 0.12, pulse: 0.62 }
 };
@@ -813,14 +813,14 @@ class JarvisCore {
     const breathOpacity = 1.0 + breath * 0.5;
 
     // 脉动效果（executing状态的"嗒-嗒-嗒"节奏）
-    const pulse = sp.pulse > 0 ? Math.pow(Math.sin(t * 8) * 0.5 + 0.5, 3) * sp.pulse : 0;
+    const pulse = sp.pulse > 0 ? Math.pow(Math.sin(t * 4) * 0.5 + 0.5, 2) * sp.pulse : 0;
     const activity = Math.max(sp.arcSpeed, sp.scanSpeed, sp.particleSpeed);
     const bloomLift = 0.60 + sp.coreIntensity * 0.56 + pulse * 0.24;
     const circuitLift = 0.42 + sp.circuitBright * 0.82 + pulse * 0.28;
     const errorTint = clamp01(sp.chaos + (sp.flickering ? 0.35 : 0));
 
     // --- 机械核心 ---
-    const corePulse = 1.0 + Math.sin(t * 3.5) * 0.12;
+    const corePulse = 1.0 + Math.sin(t * 2.0) * 0.25;
     const coreScale = corePulse * (0.5 + sp.coreIntensity * 1.0) * breathScale;
     this.corePoint.scale.setScalar(coreScale);
     this.corePoint.material.opacity = clamp01((0.58 + sp.coreIntensity * 0.34 + pulse * 0.14) * breathOpacity);
@@ -834,8 +834,8 @@ class JarvisCore {
     }
 
     for (const ring of this.mechRings) {
-      ring.mesh.rotation.y += ring.speed * sp.arcSpeed * dt * 0.8;
-      ring.mesh.rotation.x += ring.speed * sp.arcSpeed * dt * 0.3;
+      ring.mesh.rotation.y += ring.speed * sp.arcSpeed * dt * 1.2;
+      ring.mesh.rotation.x += ring.speed * sp.arcSpeed * dt * 0.45;
       ring.mesh.material.opacity = clamp01(ring.baseOpacity * (0.36 + sp.coreIntensity * 0.84) * (0.78 + pulse * 0.42));
       tintMaterialForError(ring.mesh.material, errorTint, t, 0.58);
     }
@@ -958,7 +958,10 @@ class JarvisCore {
 
         // responding状态：向外扩散
         if (sp.outward > 0) {
-          const push = sp.outward * 0.0017;
+          const basePush = sp.outward * 0.003;
+          const distanceFactor = 0.4 + d * 0.8; // 外层粒子扩散更快
+          const randomFactor = 0.6 + Math.random() * 0.8; // 更强的随机扰动
+          const push = basePush * distanceFactor * randomFactor;
           posArr[ix] += (x / d) * push;
           posArr[ix + 1] += (y / d) * push;
           posArr[ix + 2] += (z / d) * push;
@@ -988,7 +991,8 @@ class JarvisCore {
         this.flowPoints.geometry.attributes.position.needsUpdate = true;
       }
       this.flowPoints.rotation.y += sp.particleSpeed * dt * 0.5;
-      this.flowPoints.material.opacity = clamp01((0.10 + sp.particleSpeed * 0.62 + sp.circuitBright * 0.16 + pulse * 0.12) * breathOpacity);
+      const outwardBoost = sp.outward > 0 ? 0.15 + sp.outward * 0.2 : 0; // responding状态亮度提升
+      this.flowPoints.material.opacity = clamp01((0.10 + sp.particleSpeed * 0.62 + sp.circuitBright * 0.16 + pulse * 0.12 + outwardBoost) * breathOpacity);
       this.flowPoints.material.size = 0.062 + activity * 0.010 + pulse * 0.005;
       tintMaterialForError(this.flowPoints.material, errorTint, t, 0.57);
     }
